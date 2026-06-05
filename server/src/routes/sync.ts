@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getSettings } from '../db';
-import { fetchAllBusyEvents } from '../services/caldav';
+import { fetchAllBusyEvents, getScheduleFetchRange } from '../services/caldav';
 import { runFullSync } from '../services/sync';
 import { isICloudConfigured } from '../config';
 
@@ -33,11 +33,9 @@ router.get('/preview', async (_req, res) => {
     }
 
     const settings = await getSettings();
-    const now = new Date();
-    const rangeEnd = new Date(now);
-    rangeEnd.setDate(rangeEnd.getDate() + settings.schedule_days_ahead);
+    const { start: rangeStart, end: rangeEnd } = getScheduleFetchRange(settings);
 
-    const busyEvents = await fetchAllBusyEvents(settings, now, rangeEnd);
+    const busyEvents = await fetchAllBusyEvents(settings, rangeStart, rangeEnd);
     res.json({
       busy_events: busyEvents.map((e) => ({
         title: e.title,
