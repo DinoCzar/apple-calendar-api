@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "Schedule smart events around Apple Calendar events and sync to iCloud",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "tsx watch server/src/index.ts",
@@ -11,7 +14,8 @@
     "build:client": "vite build --config client/vite.config.ts",
     "build:server": "tsc -p server/tsconfig.json",
     "start": "node server/dist/index.js",
-    "db:migrate": "tsx server/src/db/migrate.ts"
+    "db:migrate": "tsx server/src/db/migrate.ts",
+    "postbuild": "test -f client/dist/index.html || (echo 'Missing client build' && exit 1)"
   },
   "dependencies": {
     "cors": "^2.8.5",

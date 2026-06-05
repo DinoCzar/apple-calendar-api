@@ -42,6 +42,18 @@ export async function initDb(): Promise<void> {
   }
   await pool.query(SCHEMA);
   await seedDefaultSettings();
+  await applyDefaultWorkingHours();
+}
+
+async function applyDefaultWorkingHours(): Promise<void> {
+  await pool.query(
+    `UPDATE settings SET value = $1 WHERE key = 'working_hours_start'`,
+    [config.defaults.workingHoursStart]
+  );
+  await pool.query(
+    `UPDATE settings SET value = $1 WHERE key = 'working_hours_end'`,
+    [config.defaults.workingHoursEnd]
+  );
 }
 
 async function seedDefaultSettings(): Promise<void> {
