@@ -11,6 +11,7 @@
     "dev:server": "tsx watch server/src/index.ts",
     "dev:client": "vite --config client/vite.config.ts",
     "build": "npm run build:client && npm run build:server",
+    "render-build": "npm run build",
     "build:client": "vite build --config client/vite.config.ts",
     "build:server": "tsc -p server/tsconfig.json",
     "start": "node server/dist/index.js",

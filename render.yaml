@@ -11,7 +11,7 @@ services:
     plan: free
     repo: https://github.com/DinoCzar/apple-calendar-api
     branch: main
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -22,6 +22,8 @@ services:
           name: smart-events-db
           property: connectionString
       - key: SESSION_SECRET
+        sync: false
+      - key: AUTH_USERNAME
         sync: false
       - key: AUTH_PASSWORD
         sync: false
