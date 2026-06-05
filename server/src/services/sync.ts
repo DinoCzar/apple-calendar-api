@@ -10,6 +10,7 @@ import {
   clearSmartEventsCalendar,
   fetchAllBusyEvents,
   generateEventUid,
+  getScheduleFetchRange,
   pushSmartEventToCalendar,
 } from './caldav';
 import { scheduleSmartEvents } from './scheduler';
@@ -27,13 +28,11 @@ export async function runFullSync(
   };
 
   const settings = await getSettings();
-  const now = new Date();
-  const rangeEnd = new Date(now);
-  rangeEnd.setDate(rangeEnd.getDate() + settings.schedule_days_ahead);
+  const { start: rangeStart, end: rangeEnd } = getScheduleFetchRange(settings);
 
   let appleEvents = [];
   try {
-    appleEvents = await fetchAllBusyEvents(settings, now, rangeEnd);
+    appleEvents = await fetchAllBusyEvents(settings, rangeStart, rangeEnd);
     result.appleEventsFetched = appleEvents.length;
   } catch (err) {
     result.errors.push(`Failed to fetch calendar events: ${(err as Error).message}`);

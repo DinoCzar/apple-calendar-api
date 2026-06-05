@@ -204,7 +204,7 @@ function canPlaceWithoutOverlap(
 ): boolean {
   return !busySlots.some((busy) => {
     const bufferedBusy: TimeSlot = {
-      start: busy.start,
+      start: new Date(busy.start.getTime() - gapMs),
       end: new Date(busy.end.getTime() + gapMs),
     };
     return overlaps(candidate, bufferedBusy);

@@ -1,7 +1,21 @@
+import { RRule, RRuleSet } from 'rrule';
 import { createDAVClient, DAVCalendar, DAVNamespaceShort } from 'tsdav';
 import { v4 as uuidv4 } from 'uuid';
 import { config, isICloudConfigured } from '../config';
 import type { AppSettings, CalendarEvent } from '../types';
+
+interface ParsedVEvent {
+  uid: string;
+  title: string;
+  start: Date;
+  end: Date;
+  allDay: boolean;
+  rrule?: string;
+  exdates: Date[];
+  recurrenceId?: Date;
+  status?: string;
+  transp?: string;
+}
 
 type CaldavClient = Awaited<ReturnType<typeof createDAVClient>>;
 
@@ -211,10 +225,23 @@ function extractVeventBlocks(icsData: string): string[][] {
   return events;
 }
 
+function parseExdateValues(
+  value: string,
+  dateOnly: boolean,
+  tzid: string | undefined,
+  defaultTimezone?: string
+): Date[] {
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => parseIcsDate(part, dateOnly, tzid, defaultTimezone));
+}
+
 function parseVeventLines(
   lines: string[],
   defaultTimezone?: string
-): CalendarEvent | null {
+): ParsedVEvent | null {
   let uid = '';
   let title = '';
   let startValue = '';
@@ -222,6 +249,11 @@ function parseVeventLines(
   let startTzid: string | undefined;
   let endTzid: string | undefined;
   let allDay = false;
+  let rrule: string | undefined;
+  const exdates: Date[] = [];
+  let recurrenceId: Date | undefined;
+  let status: string | undefined;
+  let transp: string | undefined;
 
   for (const line of lines) {
     const prop = parseIcsProperty(line);
@@ -229,6 +261,9 @@ function parseVeventLines(
 
     if (prop.name === 'UID') uid = prop.value;
     if (prop.name === 'SUMMARY') title = prop.value;
+    if (prop.name === 'STATUS') status = prop.value.toUpperCase();
+    if (prop.name === 'TRANSP') transp = prop.value.toUpperCase();
+    if (prop.name === 'RRULE') rrule = prop.value;
     if (prop.name === 'DTSTART') {
       startValue = prop.value;
       startTzid = prop.tzid;
@@ -237,6 +272,24 @@ function parseVeventLines(
     if (prop.name === 'DTEND') {
       endValue = prop.value;
       endTzid = prop.tzid;
+    }
+    if (prop.name === 'RECURRENCE-ID') {
+      recurrenceId = parseIcsDate(
+        prop.value,
+        prop.dateOnly,
+        prop.tzid || startTzid,
+        defaultTimezone
+      );
+    }
+    if (prop.name === 'EXDATE') {
+      exdates.push(
+        ...parseExdateValues(
+          prop.value,
+          prop.dateOnly || allDay,
+          prop.tzid || startTzid,
+          defaultTimezone
+        )
+      );
     }
   }
 
@@ -258,13 +311,122 @@ function parseVeventLines(
     end = new Date(start.getTime() + (allDay ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000));
   }
 
-  return { uid, title, start, end, allDay };
+  return {
+    uid,
+    title,
+    start,
+    end,
+    allDay,
+    rrule,
+    exdates,
+    recurrenceId,
+    status,
+    transp,
+  };
 }
 
-function parseIcsEvents(icsData: string, defaultTimezone?: string): CalendarEvent[] {
-  return extractVeventBlocks(icsData)
+function eventToCalendarEvents(
+  event: ParsedVEvent,
+  rangeStart: Date,
+  rangeEnd: Date
+): CalendarEvent[] {
+  if (event.end <= rangeStart || event.start >= rangeEnd) return [];
+
+  return [
+    {
+      uid: event.uid,
+      title: event.title,
+      start: event.start,
+      end: event.end,
+      allDay: event.allDay,
+    },
+  ];
+}
+
+function expandRecurringEvent(
+  event: ParsedVEvent,
+  rangeStart: Date,
+  rangeEnd: Date
+): CalendarEvent[] {
+  if (!event.rrule) {
+    return eventToCalendarEvents(event, rangeStart, rangeEnd);
+  }
+
+  try {
+    const set = new RRuleSet();
+    const options = RRule.parseString(event.rrule);
+    options.dtstart = event.start;
+    set.rrule(new RRule(options));
+
+    for (const exdate of event.exdates) {
+      set.exdate(exdate);
+    }
+
+    const durationMs = event.end.getTime() - event.start.getTime();
+    const occurrences = set.between(rangeStart, rangeEnd, true);
+
+    return occurrences.map((start) => ({
+      uid: `${event.uid}:${start.toISOString()}`,
+      title: event.title,
+      start,
+      end: new Date(start.getTime() + durationMs),
+      allDay: event.allDay,
+    }));
+  } catch (err) {
+    console.warn(
+      `Failed to expand recurring event "${event.title}": ${(err as Error).message}`
+    );
+    return eventToCalendarEvents(event, rangeStart, rangeEnd);
+  }
+}
+
+function parseIcsEvents(
+  icsData: string,
+  defaultTimezone: string | undefined,
+  rangeStart: Date,
+  rangeEnd: Date
+): CalendarEvent[] {
+  const parsed = extractVeventBlocks(icsData)
     .map((lines) => parseVeventLines(lines, defaultTimezone))
-    .filter((event): event is CalendarEvent => event !== null);
+    .filter((event): event is ParsedVEvent => event !== null)
+    .filter(
+      (event) =>
+        event.status !== 'CANCELLED' && event.transp !== 'TRANSPARENT'
+    );
+
+  const expanded: CalendarEvent[] = [];
+
+  for (const event of parsed) {
+    if (event.recurrenceId) {
+      expanded.push(...eventToCalendarEvents(event, rangeStart, rangeEnd));
+      continue;
+    }
+
+    if (event.rrule) {
+      expanded.push(...expandRecurringEvent(event, rangeStart, rangeEnd));
+      continue;
+    }
+
+    expanded.push(...eventToCalendarEvents(event, rangeStart, rangeEnd));
+  }
+
+  return expanded;
+}
+
+function startOfDayInTimezone(date: Date, timezone: string): Date {
+  const dateStr = formatDateInTimezone(date, timezone);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return makeDateInTimezone(year, month, day, 0, 0, timezone);
+}
+
+export function getScheduleFetchRange(settings: AppSettings): {
+  start: Date;
+  end: Date;
+} {
+  const now = new Date();
+  const start = startOfDayInTimezone(now, settings.timezone);
+  const end = addDaysInTimezone(start, settings.schedule_days_ahead, settings.timezone);
+  return { start, end };
 }
 
 function formatIcsDate(date: Date): string {
@@ -329,7 +491,7 @@ export async function fetchAllBusyEvents(
   });
 
   const events: CalendarEvent[] = [];
-  const seenUids = new Set<string>();
+  const seenKeys = new Set<string>();
 
   for (const calendar of busyCalendars) {
     const name = calendarDisplayName(calendar) || 'Unnamed';
@@ -345,11 +507,16 @@ export async function fetchAllBusyEvents(
       for (const obj of objects) {
         if (!obj.data) continue;
 
-        for (const parsed of parseIcsEvents(obj.data, settings.timezone)) {
-          if (parsed.end <= rangeStart || parsed.start >= rangeEnd) continue;
-          if (seenUids.has(parsed.uid)) continue;
+        for (const parsed of parseIcsEvents(
+          obj.data,
+          settings.timezone,
+          rangeStart,
+          rangeEnd
+        )) {
+          const key = `${parsed.uid}::${parsed.start.toISOString()}`;
+          if (seenKeys.has(key)) continue;
 
-          seenUids.add(parsed.uid);
+          seenKeys.add(key);
           events.push(parsed);
         }
       }
