@@ -18,6 +18,7 @@
     "postbuild": "test -f client/dist/index.html || (echo 'Missing client build' && exit 1)"
   },
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
@@ -26,6 +27,7 @@
     "uuid": "^11.0.5"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",

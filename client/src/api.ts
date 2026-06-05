@@ -2,11 +2,23 @@ import type { AppSettings, AppleEventPreview, SmartEvent, SyncResult } from './t
 
 const API = '/api';
 
+export class AuthError extends Error {
+  constructor(message = 'Login required') {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
+
+  if (res.status === 401) {
+    throw new AuthError();
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -18,6 +30,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getMe: () => request<{ username: string }>('/auth/me'),
+  login: (username: string, password: string) =>
+    request<{ username: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
   getSmartEvents: () => request<SmartEvent[]>('/smart-events'),
   createSmartEvent: (data: {
     title: string;

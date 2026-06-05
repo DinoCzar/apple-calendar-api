@@ -10,6 +10,12 @@ export const config = {
     password: process.env.ICLOUD_APP_PASSWORD || '',
     serverUrl: 'https://caldav.icloud.com',
   },
+  auth: {
+    username: process.env.AUTH_USERNAME || process.env.ICLOUD_USERNAME || '',
+    password: process.env.AUTH_PASSWORD || '',
+    sessionSecret: process.env.SESSION_SECRET || '',
+    secureCookies: process.env.NODE_ENV === 'production',
+  },
   defaults: {
     appleCalendarName: process.env.APPLE_CALENDAR_NAME || 'apple events',
     smartCalendarName: process.env.SMART_CALENDAR_NAME || 'Smart Events',
@@ -23,4 +29,12 @@ export const config = {
 
 export function isICloudConfigured(): boolean {
   return Boolean(config.icloud.username && config.icloud.password);
+}
+
+export function isAuthConfigured(): boolean {
+  return Boolean(
+    (config.auth.username || config.icloud.username) &&
+      config.auth.password &&
+      config.auth.sessionSecret
+  );
 }

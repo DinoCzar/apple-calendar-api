@@ -383,6 +383,30 @@ label {
   line-height: 1.4;
 }
 
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-card h1 {
+  font-size: 1.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.login-subtitle {
+  color: var(--text-muted);
+  margin-bottom: 1.25rem;
+  font-size: 0.95rem;
+}
+
 .preview-list {
   max-height: 280px;
   overflow-y: auto;

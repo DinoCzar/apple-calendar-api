@@ -21,6 +21,10 @@ services:
         fromDatabase:
           name: smart-events-db
           property: connectionString
+      - key: SESSION_SECRET
+        sync: false
+      - key: AUTH_PASSWORD
+        sync: false
       - key: ICLOUD_USERNAME
         sync: false
       - key: ICLOUD_APP_PASSWORD

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from './api';
+import { api, AuthError } from './api';
+import Login from './Login';
 import PriorityQueue from './PriorityQueue';
 import type { AppSettings, SmartEvent, SyncResult } from './types';
 
@@ -14,6 +15,9 @@ function formatDateTime(iso: string): string {
 }
 
 export default function App() {
+  const [user, setUser] = useState<string | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
   const [events, setEvents] = useState<SmartEvent[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,14 +54,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    api
+      .getMe()
+      .then((result) => setUser(result.username))
+      .catch((err) => {
+        if (!(err instanceof AuthError)) {
+          setError((err as Error).message);
+        }
+      })
+      .finally(() => setCheckingAuth(false));
+  }, []);
 
   useEffect(() => {
-    if (settings?.icloud_configured) {
+    if (user) load();
+  }, [user, load]);
+
+  useEffect(() => {
+    if (user && settings?.icloud_configured) {
       loadIcloudCalendars();
     }
-  }, [settings?.icloud_configured]);
+  }, [user, settings?.icloud_configured]);
+
+  async function handleLogout() {
+    await api.logout();
+    setUser(null);
+    setEvents([]);
+    setSettings(null);
+    setSyncResult(null);
+    setError(null);
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -147,6 +172,14 @@ export default function App() {
   const pendingCount = events.filter((e) => e.status === 'pending').length;
   const syncableCount = events.filter((e) => e.status !== 'completed').length;
 
+  if (checkingAuth) {
+    return <div className="login-page"><div className="empty-state">Loading…</div></div>;
+  }
+
+  if (!user) {
+    return <Login onLogin={setUser} />;
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -172,6 +205,9 @@ export default function App() {
           )}
         </div>
         <div className="header-actions">
+          <button className="btn-secondary" onClick={handleLogout}>
+            Sign out
+          </button>
           <button
             className="btn-primary"
             onClick={handleSyncSmartEvents}

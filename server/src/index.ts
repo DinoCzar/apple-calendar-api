@@ -1,9 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import fs from 'fs';
 import path from 'path';
-import { config } from './config';
+import { config, isAuthConfigured, isICloudConfigured } from './config';
 import { initDb } from './db';
+import { requireAuth } from './middleware/auth';
+import authRouter from './routes/auth';
 import smartEventsRouter from './routes/smart-events';
 import settingsRouter from './routes/settings';
 import syncRouter from './routes/sync';
@@ -24,20 +27,31 @@ function resolveClientDist(): string {
 }
 
 async function main() {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (!isAuthConfigured() || !isICloudConfigured())
+  ) {
+    throw new Error(
+      'Set AUTH_PASSWORD, SESSION_SECRET, ICLOUD_USERNAME, and ICLOUD_APP_PASSWORD for production'
+    );
+  }
+
   await initDb();
 
   const app = express();
   app.set('trust proxy', 1);
-  app.use(cors());
+  app.use(cors({ origin: true, credentials: true }));
+  app.use(cookieParser());
   app.use(express.json());
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
 
-  app.use('/api/smart-events', smartEventsRouter);
-  app.use('/api/settings', settingsRouter);
-  app.use('/api/sync', syncRouter);
+  app.use('/api/auth', authRouter);
+  app.use('/api/smart-events', requireAuth, smartEventsRouter);
+  app.use('/api/settings', requireAuth, settingsRouter);
+  app.use('/api/sync', requireAuth, syncRouter);
 
   const clientDist = resolveClientDist();
   if (!fs.existsSync(path.join(clientDist, 'index.html'))) {
