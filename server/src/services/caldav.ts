@@ -1,0 +1,522 @@
+import { createDAVClient, DAVCalendar, DAVNamespaceShort } from 'tsdav';
+import { v4 as uuidv4 } from 'uuid';
+import { config, isICloudConfigured } from '../config';
+import type { AppSettings, CalendarEvent } from '../types';
+
+type CaldavClient = Awaited<ReturnType<typeof createDAVClient>>;
+
+let clientPromise: Promise<CaldavClient> | null = null;
+
+function calendarDisplayName(cal: DAVCalendar): string {
+  if (typeof cal.displayName === 'string') return cal.displayName;
+  if (cal.displayName && typeof cal.displayName === 'object') {
+    const text = (cal.displayName as { _text?: string })._text;
+    if (text) return text;
+  }
+  return '';
+}
+
+async function getClient() {
+  if (!isICloudConfigured()) {
+    throw new Error(
+      'iCloud credentials not configured. Set ICLOUD_USERNAME and ICLOUD_APP_PASSWORD.'
+    );
+  }
+
+  if (!clientPromise) {
+    clientPromise = createDAVClient({
+      serverUrl: config.icloud.serverUrl,
+      credentials: {
+        username: config.icloud.username,
+        password: config.icloud.password,
+      },
+      authMethod: 'Basic',
+      defaultAccountType: 'caldav',
+    });
+  }
+
+  return clientPromise;
+}
+
+function findCalendarByName(
+  calendars: DAVCalendar[],
+  name: string
+): DAVCalendar | undefined {
+  const normalized = name.trim().toLowerCase();
+  return calendars.find((cal) => {
+    const name = calendarDisplayName(cal).trim().toLowerCase();
+    return (
+      name === normalized ||
+      (cal.url || '').toLowerCase().includes(normalized.replace(/\s+/g, ''))
+    );
+  });
+}
+
+function unfoldIcsLines(icsData: string): string[] {
+  const raw = icsData.replace(/\r\n/g, '\n').split('\n');
+  const lines: string[] = [];
+
+  for (const line of raw) {
+    if ((line.startsWith(' ') || line.startsWith('\t')) && lines.length > 0) {
+      lines[lines.length - 1] += line.slice(1);
+    } else {
+      lines.push(line);
+    }
+  }
+
+  return lines;
+}
+
+function parseIcsProperty(line: string): {
+  name: string;
+  value: string;
+  tzid?: string;
+  dateOnly: boolean;
+} | null {
+  const colonIdx = line.indexOf(':');
+  if (colonIdx === -1) return null;
+
+  const namePart = line.slice(0, colonIdx);
+  const value = line.slice(colonIdx + 1).trim();
+  const name = namePart.split(';')[0].toUpperCase();
+  const dateOnly =
+    namePart.includes('VALUE=DATE') && !namePart.includes('VALUE=DATE-TIME');
+  const tzMatch = namePart.match(/TZID=([^;:]+)/i);
+
+  return {
+    name,
+    value,
+    tzid: tzMatch?.[1],
+    dateOnly,
+  };
+}
+
+function parseIcsDate(
+  value: string,
+  isDateOnly: boolean,
+  tzid?: string,
+  defaultTimezone?: string
+): Date {
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(4, 6));
+  const day = Number(value.slice(6, 8));
+
+  if (isDateOnly) {
+    const zone = tzid || defaultTimezone;
+    if (zone) {
+      return makeDateInTimezone(year, month, day, 0, 0, zone);
+    }
+    return new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`);
+  }
+
+  const hour = Number(value.slice(9, 11) || '0');
+  const minute = Number(value.slice(11, 13) || '0');
+  const second = Number(value.slice(13, 15) || '0');
+
+  if (value.endsWith('Z')) {
+    return new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  }
+
+  const zone = tzid || defaultTimezone;
+  if (zone) {
+    return makeDateInTimezone(year, month, day, hour, minute, zone);
+  }
+
+  return new Date(
+    `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
+  );
+}
+
+function makeDateInTimezone(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timezone: string
+): Date {
+  let utc = Date.UTC(year, month - 1, day, hour, minute, 0);
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const actual = partsInTimezone(new Date(utc), timezone);
+    const desiredMs = Date.UTC(year, month - 1, day, hour, minute, 0);
+    const actualMs = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      0
+    );
+    const delta = desiredMs - actualMs;
+    if (delta === 0) break;
+    utc += delta;
+  }
+
+  return new Date(utc);
+}
+
+function formatDateInTimezone(date: Date, timezone: string): string {
+  const { year, month, day } = partsInTimezone(date, timezone);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function addDaysInTimezone(date: Date, days: number, timezone: string): Date {
+  const dateStr = formatDateInTimezone(date, timezone);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return makeDateInTimezone(year, month, day + days, 0, 0, timezone);
+}
+
+function partsInTimezone(date: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0';
+  return {
+    year: Number(get('year')),
+    month: Number(get('month')),
+    day: Number(get('day')),
+    hour: Number(get('hour')),
+    minute: Number(get('minute')),
+    second: Number(get('second')),
+  };
+}
+
+function extractVeventBlocks(icsData: string): string[][] {
+  const lines = unfoldIcsLines(icsData);
+  const events: string[][] = [];
+  let current: string[] | null = null;
+
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') {
+      current = [];
+      continue;
+    }
+    if (line === 'END:VEVENT') {
+      if (current) events.push(current);
+      current = null;
+      continue;
+    }
+    if (current) current.push(line);
+  }
+
+  return events;
+}
+
+function parseVeventLines(
+  lines: string[],
+  defaultTimezone?: string
+): CalendarEvent | null {
+  let uid = '';
+  let title = '';
+  let startValue = '';
+  let endValue = '';
+  let startTzid: string | undefined;
+  let endTzid: string | undefined;
+  let allDay = false;
+
+  for (const line of lines) {
+    const prop = parseIcsProperty(line);
+    if (!prop) continue;
+
+    if (prop.name === 'UID') uid = prop.value;
+    if (prop.name === 'SUMMARY') title = prop.value;
+    if (prop.name === 'DTSTART') {
+      startValue = prop.value;
+      startTzid = prop.tzid;
+      allDay = prop.dateOnly;
+    }
+    if (prop.name === 'DTEND') {
+      endValue = prop.value;
+      endTzid = prop.tzid;
+    }
+  }
+
+  if (!uid || !startValue) return null;
+
+  const start = parseIcsDate(startValue, allDay, startTzid, defaultTimezone);
+  let end: Date;
+
+  if (endValue) {
+    end = parseIcsDate(endValue, allDay, endTzid || startTzid, defaultTimezone);
+  } else if (allDay) {
+    const zone = defaultTimezone || 'UTC';
+    end = addDaysInTimezone(start, 1, zone);
+  } else {
+    end = new Date(start.getTime() + 60 * 60 * 1000);
+  }
+
+  if (end <= start) {
+    end = new Date(start.getTime() + (allDay ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000));
+  }
+
+  return { uid, title, start, end, allDay };
+}
+
+function parseIcsEvents(icsData: string, defaultTimezone?: string): CalendarEvent[] {
+  return extractVeventBlocks(icsData)
+    .map((lines) => parseVeventLines(lines, defaultTimezone))
+    .filter((event): event is CalendarEvent => event !== null);
+}
+
+function formatIcsDate(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
+    `T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`
+  );
+}
+
+function buildIcsEvent(params: {
+  uid: string;
+  title: string;
+  description?: string;
+  start: Date;
+  end: Date;
+}): string {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Smart Events//EN',
+    'BEGIN:VEVENT',
+    `UID:${params.uid}`,
+    `DTSTAMP:${formatIcsDate(new Date())}`,
+    `DTSTART:${formatIcsDate(params.start)}`,
+    `DTEND:${formatIcsDate(params.end)}`,
+    `SUMMARY:${params.title}`,
+  ];
+
+  if (params.description) {
+    lines.push(`DESCRIPTION:${params.description.replace(/\n/g, '\\n')}`);
+  }
+
+  lines.push('END:VEVENT', 'END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+export async function listCalendars(): Promise<{ name: string; url: string }[]> {
+  const client = await getClient();
+  const calendars = await client.fetchCalendars();
+  return calendars.map((cal) => ({
+    name: calendarDisplayName(cal) || 'Unnamed',
+    url: cal.url,
+  }));
+}
+
+export async function fetchAllBusyEvents(
+  settings: AppSettings,
+  rangeStart: Date,
+  rangeEnd: Date
+): Promise<CalendarEvent[]> {
+  const client = await getClient();
+  const calendars = await client.fetchCalendars();
+  const smartCalendar = findCalendarByName(
+    calendars,
+    settings.smart_calendar_name
+  );
+
+  const busyCalendars = calendars.filter((cal) => {
+    if (!smartCalendar) return true;
+    return cal.url !== smartCalendar.url;
+  });
+
+  const events: CalendarEvent[] = [];
+  const seenUids = new Set<string>();
+
+  for (const calendar of busyCalendars) {
+    const name = calendarDisplayName(calendar) || 'Unnamed';
+    try {
+      const objects = await client.fetchCalendarObjects({
+        calendar,
+        timeRange: {
+          start: rangeStart.toISOString(),
+          end: rangeEnd.toISOString(),
+        },
+      });
+
+      for (const obj of objects) {
+        if (!obj.data) continue;
+
+        for (const parsed of parseIcsEvents(obj.data, settings.timezone)) {
+          if (parsed.end <= rangeStart || parsed.start >= rangeEnd) continue;
+          if (seenUids.has(parsed.uid)) continue;
+
+          seenUids.add(parsed.uid);
+          events.push(parsed);
+        }
+      }
+    } catch (err) {
+      console.warn(`Skipped calendar "${name}": ${(err as Error).message}`);
+    }
+  }
+
+  return events.sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+function calendarHomeUrl(calendar: DAVCalendar): string {
+  const url = calendar.url.endsWith('/') ? calendar.url : `${calendar.url}/`;
+  const parts = url.split('/');
+  parts.pop();
+  return `${parts.join('/')}/`;
+}
+
+function isMkCalendarSuccess(status: number | string | undefined): boolean {
+  const code = typeof status === 'string' ? parseInt(status, 10) : status;
+  return code !== undefined && code >= 200 && code < 300;
+}
+
+async function getSmartCalendar(
+  client: CaldavClient,
+  settings: AppSettings
+): Promise<DAVCalendar | null> {
+  const calendars = await client.fetchCalendars();
+  return findCalendarByName(calendars, settings.smart_calendar_name) ?? null;
+}
+
+export async function clearSmartEventsCalendar(
+  settings: AppSettings
+): Promise<number> {
+  const client = await getClient();
+  const smartCalendar = await getSmartCalendar(client, settings);
+  if (!smartCalendar) return 0;
+
+  const objects = await client.fetchCalendarObjects({
+    calendar: smartCalendar,
+  });
+
+  let deleted = 0;
+  for (const obj of objects) {
+    if (!obj.url) continue;
+    await client.deleteCalendarObject({ calendarObject: obj });
+    deleted++;
+  }
+
+  return deleted;
+}
+
+async function getOrCreateSmartCalendar(
+  client: CaldavClient,
+  settings: AppSettings
+): Promise<DAVCalendar> {
+  const existing = await getSmartCalendar(client, settings);
+  if (existing) return existing;
+
+  const calendars = await client.fetchCalendars();
+  const reference = calendars[0];
+
+  if (!reference) {
+    throw new Error('No calendars found on iCloud account');
+  }
+
+  const calendarId = uuidv4().toUpperCase();
+  const homeUrl = calendarHomeUrl(reference);
+  const newUrl = `${homeUrl}${calendarId}/`;
+
+  let createResponses;
+  try {
+    createResponses = await client.makeCalendar({
+      url: newUrl,
+      props: {
+        [`${DAVNamespaceShort.DAV}:displayname`]: settings.smart_calendar_name,
+        [`${DAVNamespaceShort.CALDAV_APPLE}:calendar-color`]: '#5B8DEFFF',
+        [`${DAVNamespaceShort.CALDAV}:supported-calendar-component-set`]: {
+          [`${DAVNamespaceShort.CALDAV}:comp`]: [
+            { _attributes: { name: 'VEVENT' } },
+          ],
+        },
+      },
+    });
+  } catch (err) {
+    throw new Error(
+      `Could not create "${settings.smart_calendar_name}" calendar on iCloud. ` +
+        `Open Apple Calendar on your Mac or iPhone, create a new calendar named ` +
+        `"${settings.smart_calendar_name}", wait a minute, then sync again. ` +
+        `(${(err as Error).message})`
+    );
+  }
+
+  const createdOk =
+    createResponses?.some((r) => isMkCalendarSuccess(r.status)) ?? false;
+
+  const refreshed = await client.fetchCalendars();
+  const created =
+    findCalendarByName(refreshed, settings.smart_calendar_name) ??
+    refreshed.find(
+      (cal) =>
+        cal.url === newUrl ||
+        cal.url === newUrl.replace(/\/$/, '') ||
+        cal.url.replace(/\/$/, '') === newUrl.replace(/\/$/, '')
+    );
+
+  if (created) return created;
+
+  if (createdOk) {
+    return {
+      url: newUrl,
+      displayName: settings.smart_calendar_name,
+    };
+  }
+
+  throw new Error(
+    `Could not create "${settings.smart_calendar_name}" calendar on iCloud. ` +
+      `Open Apple Calendar on your Mac or iPhone, create a new calendar named ` +
+      `"${settings.smart_calendar_name}", wait a minute, then sync again.`
+  );
+}
+
+export async function pushSmartEventToCalendar(params: {
+  settings: AppSettings;
+  uid: string;
+  title: string;
+  description?: string | null;
+  start: Date;
+  end: Date;
+}): Promise<string> {
+  const client = await getClient();
+  const smartCalendar = await getOrCreateSmartCalendar(client, params.settings);
+  const icsData = buildIcsEvent({
+    uid: params.uid,
+    title: params.title,
+    description: params.description ?? undefined,
+    start: params.start,
+    end: params.end,
+  });
+
+  await client.createCalendarObject({
+    calendar: smartCalendar,
+    filename: `${params.uid}.ics`,
+    iCalString: icsData,
+  });
+
+  return params.uid;
+}
+
+export async function deleteSmartEventFromCalendar(
+  settings: AppSettings,
+  uid: string
+): Promise<void> {
+  const client = await getClient();
+  const smartCalendar = await getSmartCalendar(client, settings);
+  if (!smartCalendar) return;
+
+  const objects = await client.fetchCalendarObjects({
+    calendar: smartCalendar,
+  });
+
+  const match = objects.find((obj) => obj.url?.includes(uid));
+  if (match?.url) {
+    await client.deleteCalendarObject({ calendarObject: match });
+  }
+}
+
+export function generateEventUid(): string {
+  return `${uuidv4()}@smart-events`;
+}

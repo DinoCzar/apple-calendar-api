@@ -1,0 +1,67 @@
+export interface SmartEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  duration_minutes: number;
+  priority: number;
+  status: SmartEventStatus;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  apple_event_uid: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SmartEventStatus = 'pending' | 'scheduled' | 'synced' | 'completed';
+
+export interface CreateSmartEventInput {
+  title: string;
+  description?: string;
+  duration_minutes?: number;
+  priority?: number;
+}
+
+export interface UpdateSmartEventInput {
+  title?: string;
+  description?: string | null;
+  duration_minutes?: number;
+  priority?: number;
+  status?: SmartEventStatus;
+}
+
+export interface AppSettings {
+  apple_calendar_name: string;
+  smart_calendar_name: string;
+  working_hours_start: string;
+  working_hours_end: string;
+  schedule_days_ahead: number;
+  min_gap_minutes: number;
+  timezone: string;
+}
+
+export interface CalendarEvent {
+  uid: string;
+  title: string;
+  start: Date;
+  end: Date;
+  allDay: boolean;
+}
+
+export interface TimeSlot {
+  start: Date;
+  end: Date;
+}
+
+export interface ScheduledSlot {
+  smartEventId: string;
+  start: Date;
+  end: Date;
+}
+
+export interface SyncResult {
+  appleEventsFetched: number;
+  smartEventsCleared: number;
+  smartEventsScheduled: number;
+  smartEventsSynced: number;
+  errors: string[];
+}
