@@ -45,6 +45,8 @@ export interface CalendarEvent {
   start: Date;
   end: Date;
   allDay: boolean;
+  lastModified?: Date;
+  isRecurrenceInstance?: boolean;
 }
 
 export interface TimeSlot {
