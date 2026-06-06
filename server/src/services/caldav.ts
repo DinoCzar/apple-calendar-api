@@ -496,11 +496,6 @@ function removeStaleUidVersions(events: CalendarEvent[]): CalendarEvent[] {
   return events.filter((event) => !drop.has(eventInstanceKey(event)));
 }
 
-const FRESH_FETCH_HEADERS = {
-  'Cache-Control': 'no-cache, no-store',
-  Pragma: 'no-cache',
-};
-
 function hasCalendarData(
   objects: Awaited<ReturnType<CaldavClient['fetchCalendarObjects']>>
 ): boolean {
@@ -520,7 +515,6 @@ async function fetchBusyCalendarObjects(
     calendar,
     timeRange,
     fetchOptions: { cache: 'no-store' } as RequestInit,
-    headers: refresh ? FRESH_FETCH_HEADERS : undefined,
   };
 
   const standard = await client.fetchCalendarObjects(common);
