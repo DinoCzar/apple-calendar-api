@@ -220,6 +220,10 @@ label {
   margin-bottom: 0.75rem;
 }
 
+.priority-hint-mobile {
+  display: none;
+}
+
 .priority-saving {
   color: var(--accent);
 }
@@ -241,8 +245,24 @@ label {
 }
 
 .event-item-draggable {
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
   cursor: grab;
   transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+
+.event-item-content {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1rem;
+  width: 100%;
+}
+
+.mobile-drag-tab {
+  display: none;
 }
 
 .event-item-draggable:active {
@@ -454,4 +474,41 @@ label {
   font-size: 0.85rem;
   color: var(--text-muted);
   margin-top: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .priority-hint-desktop {
+    display: none;
+  }
+
+  .priority-hint-mobile {
+    display: inline;
+  }
+
+  .event-item-draggable {
+    cursor: default;
+  }
+
+  .mobile-drag-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .mobile-drag-tab:active,
+  .event-item-draggable.dragging .mobile-drag-tab {
+    background: rgba(91, 141, 239, 0.12);
+    color: var(--accent);
+  }
 }
