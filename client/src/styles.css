@@ -241,7 +241,12 @@ label {
 }
 
 .event-item-draggable {
+  cursor: grab;
   transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+
+.event-item-draggable:active {
+  cursor: grabbing;
 }
 
 .event-item-draggable.dragging {
@@ -263,11 +268,7 @@ label {
   color: var(--text-muted);
   flex-shrink: 0;
   user-select: none;
-  cursor: grab;
-}
-
-.drag-handle:active {
-  cursor: grabbing;
+  pointer-events: none;
 }
 
 .priority-rank {
@@ -307,6 +308,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 .form-grid {
