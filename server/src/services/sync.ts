@@ -32,7 +32,9 @@ export async function runFullSync(
 
   let appleEvents = [];
   try {
-    appleEvents = await fetchAllBusyEvents(settings, rangeStart, rangeEnd);
+    appleEvents = await fetchAllBusyEvents(settings, rangeStart, rangeEnd, {
+      refresh: true,
+    });
     result.appleEventsFetched = appleEvents.length;
   } catch (err) {
     result.errors.push(`Failed to fetch calendar events: ${(err as Error).message}`);
