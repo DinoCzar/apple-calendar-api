@@ -532,14 +532,16 @@ function BusyTimesPreview({ configured }: { configured: boolean }) {
   >([]);
   const [loading, setLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
 
-  async function loadPreview() {
+  async function loadPreview(refresh = false) {
     if (!configured) return;
     setLoading(true);
     setPreviewError(null);
     try {
-      const data = await api.previewBusyEvents();
+      const data = await api.previewBusyEvents(refresh);
       setEvents(data.busy_events);
+      setFetchedAt(data.fetched_at);
     } catch (err) {
       setPreviewError((err as Error).message);
     } finally {
@@ -548,7 +550,7 @@ function BusyTimesPreview({ configured }: { configured: boolean }) {
   }
 
   useEffect(() => {
-    loadPreview();
+    loadPreview(true);
   }, [configured]);
 
   return (
@@ -590,14 +592,21 @@ function BusyTimesPreview({ configured }: { configured: boolean }) {
         </div>
       )}
       {configured && (
-        <button
-          className="btn-secondary"
-          style={{ marginTop: '0.75rem', width: '100%', fontSize: '0.85rem' }}
-          onClick={loadPreview}
-          disabled={loading}
-        >
-          Refresh
-        </button>
+        <div className="preview-footer">
+          {fetchedAt && !loading && (
+            <p className="preview-fetched-at">
+              Updated {formatDateTime(fetchedAt)}
+            </p>
+          )}
+          <button
+            className="btn-secondary"
+            style={{ width: '100%', fontSize: '0.85rem' }}
+            onClick={() => loadPreview(true)}
+            disabled={loading}
+          >
+            {loading ? 'Refreshing from iCloud…' : 'Refresh from iCloud'}
+          </button>
+        </div>
       )}
     </div>
   );

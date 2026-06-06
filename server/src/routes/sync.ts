@@ -39,7 +39,7 @@ router.post('/recall', async (_req, res) => {
   }
 });
 
-router.get('/preview', async (_req, res) => {
+router.get('/preview', async (req, res) => {
   try {
     if (!isICloudConfigured()) {
       res.status(400).json({
@@ -48,17 +48,30 @@ router.get('/preview', async (_req, res) => {
       return;
     }
 
+    res.set('Cache-Control', 'no-store');
+
     const settings = await getSettings();
     const { start: rangeStart, end: rangeEnd } = getScheduleFetchRange(settings);
+    const refresh =
+      req.query.refresh === '1' ||
+      req.query.refresh === 'true' ||
+      typeof req.query.t === 'string';
 
-    const busyEvents = await fetchAllBusyEvents(settings, rangeStart, rangeEnd);
+    const busyEvents = await fetchAllBusyEvents(settings, rangeStart, rangeEnd, {
+      refresh,
+    });
+    const now = new Date();
+
     res.json({
-      busy_events: busyEvents.map((e) => ({
-        title: e.title,
-        start: e.start.toISOString(),
-        end: e.end.toISOString(),
-        all_day: e.allDay,
-      })),
+      fetched_at: now.toISOString(),
+      busy_events: busyEvents
+        .filter((e) => e.end > now)
+        .map((e) => ({
+          title: e.title,
+          start: e.start.toISOString(),
+          end: e.end.toISOString(),
+          all_day: e.allDay,
+        })),
     });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

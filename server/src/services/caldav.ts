@@ -21,6 +21,10 @@ type CaldavClient = Awaited<ReturnType<typeof createDAVClient>>;
 
 let clientPromise: Promise<CaldavClient> | null = null;
 
+export function resetCaldavClient(): void {
+  clientPromise = null;
+}
+
 function calendarDisplayName(cal: DAVCalendar): string {
   if (typeof cal.displayName === 'string') return cal.displayName;
   if (cal.displayName && typeof cal.displayName === 'object') {
@@ -476,8 +480,13 @@ export async function listCalendars(): Promise<{ name: string; url: string }[]> 
 export async function fetchAllBusyEvents(
   settings: AppSettings,
   rangeStart: Date,
-  rangeEnd: Date
+  rangeEnd: Date,
+  options: { refresh?: boolean } = {}
 ): Promise<CalendarEvent[]> {
+  if (options.refresh) {
+    resetCaldavClient();
+  }
+
   const client = await getClient();
   const calendars = await client.fetchCalendars();
   const smartCalendar = findCalendarByName(

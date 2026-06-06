@@ -456,6 +456,17 @@ label {
   margin-top: 0.15rem;
 }
 
+.preview-footer {
+  margin-top: 0.75rem;
+}
+
+.preview-fetched-at {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;

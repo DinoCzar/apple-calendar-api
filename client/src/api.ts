@@ -82,6 +82,8 @@ export const api = {
     request<RecallResult>('/sync/recall', {
       method: 'POST',
     }),
-  previewBusyEvents: () =>
-    request<{ busy_events: AppleEventPreview[] }>('/sync/preview'),
+  previewBusyEvents: (refresh = false) =>
+    request<{ busy_events: AppleEventPreview[]; fetched_at: string }>(
+      `/sync/preview${refresh ? `?refresh=1&t=${Date.now()}` : ''}`
+    ),
 };
