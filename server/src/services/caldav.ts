@@ -15,6 +15,7 @@ interface ParsedVEvent {
   recurrenceId?: Date;
   status?: string;
   transp?: string;
+  lastModified?: Date;
 }
 
 type CaldavClient = Awaited<ReturnType<typeof createDAVClient>>;
@@ -258,6 +259,7 @@ function parseVeventLines(
   let recurrenceId: Date | undefined;
   let status: string | undefined;
   let transp: string | undefined;
+  let lastModified: Date | undefined;
 
   for (const line of lines) {
     const prop = parseIcsProperty(line);
@@ -295,6 +297,17 @@ function parseVeventLines(
         )
       );
     }
+    if (prop.name === 'LAST-MODIFIED' || prop.name === 'DTSTAMP') {
+      const parsed = parseIcsDate(
+        prop.value,
+        prop.dateOnly,
+        prop.tzid,
+        defaultTimezone
+      );
+      if (!lastModified || parsed > lastModified) {
+        lastModified = parsed;
+      }
+    }
   }
 
   if (!uid || !startValue) return null;
@@ -326,13 +339,15 @@ function parseVeventLines(
     recurrenceId,
     status,
     transp,
+    lastModified,
   };
 }
 
 function eventToCalendarEvents(
   event: ParsedVEvent,
   rangeStart: Date,
-  rangeEnd: Date
+  rangeEnd: Date,
+  meta?: { isRecurrenceInstance?: boolean }
 ): CalendarEvent[] {
   if (event.end <= rangeStart || event.start >= rangeEnd) return [];
 
@@ -343,6 +358,8 @@ function eventToCalendarEvents(
       start: event.start,
       end: event.end,
       allDay: event.allDay,
+      lastModified: event.lastModified,
+      isRecurrenceInstance: meta?.isRecurrenceInstance,
     },
   ];
 }
@@ -375,6 +392,8 @@ function expandRecurringEvent(
       start,
       end: new Date(start.getTime() + durationMs),
       allDay: event.allDay,
+      lastModified: event.lastModified,
+      isRecurrenceInstance: true,
     }));
   } catch (err) {
     console.warn(
@@ -388,7 +407,8 @@ function parseIcsEvents(
   icsData: string,
   defaultTimezone: string | undefined,
   rangeStart: Date,
-  rangeEnd: Date
+  rangeEnd: Date,
+  options: { serverExpanded?: boolean } = {}
 ): CalendarEvent[] {
   const parsed = extractVeventBlocks(icsData)
     .map((lines) => parseVeventLines(lines, defaultTimezone))
@@ -401,8 +421,21 @@ function parseIcsEvents(
   const expanded: CalendarEvent[] = [];
 
   for (const event of parsed) {
+    if (options.serverExpanded) {
+      expanded.push(
+        ...eventToCalendarEvents(event, rangeStart, rangeEnd, {
+          isRecurrenceInstance: Boolean(event.recurrenceId || event.rrule),
+        })
+      );
+      continue;
+    }
+
     if (event.recurrenceId) {
-      expanded.push(...eventToCalendarEvents(event, rangeStart, rangeEnd));
+      expanded.push(
+        ...eventToCalendarEvents(event, rangeStart, rangeEnd, {
+          isRecurrenceInstance: true,
+        })
+      );
       continue;
     }
 
@@ -416,6 +449,51 @@ function parseIcsEvents(
 
   return expanded;
 }
+
+function eventInstanceKey(event: CalendarEvent): string {
+  return `${event.uid}::${event.start.toISOString()}`;
+}
+
+function removeStaleUidVersions(events: CalendarEvent[]): CalendarEvent[] {
+  const singles = new Map<string, CalendarEvent[]>();
+
+  for (const event of events) {
+    if (event.isRecurrenceInstance) continue;
+    const list = singles.get(event.uid) ?? [];
+    list.push(event);
+    singles.set(event.uid, list);
+  }
+
+  const drop = new Set<string>();
+
+  for (const list of singles.values()) {
+    if (list.length <= 1) continue;
+
+    let latest = list[0];
+    for (const event of list) {
+      const latestTime = latest.lastModified?.getTime() ?? 0;
+      const eventTime = event.lastModified?.getTime() ?? 0;
+      if (eventTime > latestTime) {
+        latest = event;
+      }
+    }
+
+    if (!latest.lastModified) continue;
+
+    for (const event of list) {
+      if (event !== latest) {
+        drop.add(eventInstanceKey(event));
+      }
+    }
+  }
+
+  return events.filter((event) => !drop.has(eventInstanceKey(event)));
+}
+
+const FRESH_FETCH_HEADERS = {
+  'Cache-Control': 'no-cache, no-store',
+  Pragma: 'no-cache',
+};
 
 function startOfDayInTimezone(date: Date, timezone: string): Date {
   const dateStr = formatDateInTimezone(date, timezone);
@@ -499,20 +577,48 @@ export async function fetchAllBusyEvents(
     return cal.url !== smartCalendar.url;
   });
 
-  const events: CalendarEvent[] = [];
-  const seenKeys = new Set<string>();
+  const eventMap = new Map<string, CalendarEvent>();
+
+  const timeRange = {
+    start: rangeStart.toISOString(),
+    end: rangeEnd.toISOString(),
+  };
+  const fetchOptions = { cache: 'no-store' } as RequestInit;
 
   for (const calendar of busyCalendars) {
     const name = calendarDisplayName(calendar) || 'Unnamed';
-    try {
-      const objects = await client.fetchCalendarObjects({
-        calendar,
-        timeRange: {
-          start: rangeStart.toISOString(),
-          end: rangeEnd.toISOString(),
-        },
-      });
+    let objects;
+    let serverExpanded = true;
 
+    try {
+      objects = await client.fetchCalendarObjects({
+        calendar,
+        timeRange,
+        expand: true,
+        useMultiGet: false,
+        headers: options.refresh ? FRESH_FETCH_HEADERS : undefined,
+        fetchOptions,
+      });
+    } catch (err) {
+      console.warn(
+        `Expanded fetch failed for "${name}", retrying: ${(err as Error).message}`
+      );
+      try {
+        objects = await client.fetchCalendarObjects({
+          calendar,
+          timeRange,
+          expand: false,
+          headers: options.refresh ? FRESH_FETCH_HEADERS : undefined,
+          fetchOptions,
+        });
+        serverExpanded = false;
+      } catch (retryErr) {
+        console.warn(`Skipped calendar "${name}": ${(retryErr as Error).message}`);
+        continue;
+      }
+    }
+
+    try {
       for (const obj of objects) {
         if (!obj.data) continue;
 
@@ -520,13 +626,21 @@ export async function fetchAllBusyEvents(
           obj.data,
           settings.timezone,
           rangeStart,
-          rangeEnd
+          rangeEnd,
+          { serverExpanded }
         )) {
-          const key = `${parsed.uid}::${parsed.start.toISOString()}`;
-          if (seenKeys.has(key)) continue;
+          const key = eventInstanceKey(parsed);
+          const existing = eventMap.get(key);
+          if (existing) {
+            const existingTime = existing.lastModified?.getTime() ?? 0;
+            const parsedTime = parsed.lastModified?.getTime() ?? 0;
+            if (parsedTime > existingTime) {
+              eventMap.set(key, parsed);
+            }
+            continue;
+          }
 
-          seenKeys.add(key);
-          events.push(parsed);
+          eventMap.set(key, parsed);
         }
       }
     } catch (err) {
@@ -534,7 +648,10 @@ export async function fetchAllBusyEvents(
     }
   }
 
-  return events.sort((a, b) => a.start.getTime() - b.start.getTime());
+  const events = [...eventMap.values()];
+  return removeStaleUidVersions(events).sort(
+    (a, b) => a.start.getTime() - b.start.getTime()
+  );
 }
 
 function calendarHomeUrl(calendar: DAVCalendar): string {
