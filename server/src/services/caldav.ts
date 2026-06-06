@@ -422,11 +422,17 @@ function parseIcsEvents(
 
   for (const event of parsed) {
     if (options.serverExpanded) {
-      expanded.push(
-        ...eventToCalendarEvents(event, rangeStart, rangeEnd, {
-          isRecurrenceInstance: Boolean(event.recurrenceId || event.rrule),
-        })
-      );
+      if (event.recurrenceId) {
+        expanded.push(
+          ...eventToCalendarEvents(event, rangeStart, rangeEnd, {
+            isRecurrenceInstance: true,
+          })
+        );
+      } else if (event.rrule) {
+        expanded.push(...expandRecurringEvent(event, rangeStart, rangeEnd));
+      } else {
+        expanded.push(...eventToCalendarEvents(event, rangeStart, rangeEnd));
+      }
       continue;
     }
 
@@ -494,6 +500,52 @@ const FRESH_FETCH_HEADERS = {
   'Cache-Control': 'no-cache, no-store',
   Pragma: 'no-cache',
 };
+
+function hasCalendarData(
+  objects: Awaited<ReturnType<CaldavClient['fetchCalendarObjects']>>
+): boolean {
+  return objects.some((obj) => Boolean(obj.data));
+}
+
+async function fetchBusyCalendarObjects(
+  client: CaldavClient,
+  calendar: DAVCalendar,
+  timeRange: { start: string; end: string },
+  refresh: boolean
+): Promise<{
+  objects: Awaited<ReturnType<CaldavClient['fetchCalendarObjects']>>;
+  serverExpanded: boolean;
+}> {
+  const common = {
+    calendar,
+    timeRange,
+    fetchOptions: { cache: 'no-store' } as RequestInit,
+    headers: refresh ? FRESH_FETCH_HEADERS : undefined,
+  };
+
+  const standard = await client.fetchCalendarObjects(common);
+  if (hasCalendarData(standard)) {
+    return { objects: standard, serverExpanded: false };
+  }
+
+  if (refresh) {
+    try {
+      const expanded = await client.fetchCalendarObjects({
+        ...common,
+        expand: true,
+      });
+      if (hasCalendarData(expanded)) {
+        return { objects: expanded, serverExpanded: true };
+      }
+    } catch (err) {
+      console.warn(
+        `Expanded CalDAV fetch returned no data: ${(err as Error).message}`
+      );
+    }
+  }
+
+  return { objects: standard, serverExpanded: false };
+}
 
 function startOfDayInTimezone(date: Date, timezone: string): Date {
   const dateStr = formatDateInTimezone(date, timezone);
@@ -583,42 +635,18 @@ export async function fetchAllBusyEvents(
     start: rangeStart.toISOString(),
     end: rangeEnd.toISOString(),
   };
-  const fetchOptions = { cache: 'no-store' } as RequestInit;
 
   for (const calendar of busyCalendars) {
     const name = calendarDisplayName(calendar) || 'Unnamed';
-    let objects;
-    let serverExpanded = true;
 
     try {
-      objects = await client.fetchCalendarObjects({
+      const { objects, serverExpanded } = await fetchBusyCalendarObjects(
+        client,
         calendar,
         timeRange,
-        expand: true,
-        useMultiGet: false,
-        headers: options.refresh ? FRESH_FETCH_HEADERS : undefined,
-        fetchOptions,
-      });
-    } catch (err) {
-      console.warn(
-        `Expanded fetch failed for "${name}", retrying: ${(err as Error).message}`
+        Boolean(options.refresh)
       );
-      try {
-        objects = await client.fetchCalendarObjects({
-          calendar,
-          timeRange,
-          expand: false,
-          headers: options.refresh ? FRESH_FETCH_HEADERS : undefined,
-          fetchOptions,
-        });
-        serverExpanded = false;
-      } catch (retryErr) {
-        console.warn(`Skipped calendar "${name}": ${(retryErr as Error).message}`);
-        continue;
-      }
-    }
 
-    try {
       for (const obj of objects) {
         if (!obj.data) continue;
 
