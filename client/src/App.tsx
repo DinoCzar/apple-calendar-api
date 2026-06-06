@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, AuthError } from './api';
 import Login from './Login';
 import PriorityQueue from './PriorityQueue';
-import type { AppSettings, SmartEvent, SyncResult } from './types';
+import type { AppSettings, RecallResult, SmartEvent, SyncResult } from './types';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -22,8 +22,10 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [recalling, setRecalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [recallResult, setRecallResult] = useState<RecallResult | null>(null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -131,6 +133,7 @@ export default function App() {
     setSyncing(true);
     setError(null);
     setSyncResult(null);
+    setRecallResult(null);
     try {
       const result = await api.runSync(true);
       setSyncResult(result);
@@ -139,6 +142,37 @@ export default function App() {
       setError((err as Error).message);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleRecallEvents() {
+    const onCalendar = events.filter(
+      (e) => e.status === 'synced' || e.status === 'scheduled'
+    ).length;
+
+    if (
+      !confirm(
+        `Remove smart events from your ${settings?.smart_calendar_name ?? 'Smart Events'} calendar` +
+          (onCalendar > 0
+            ? ` and return ${onCalendar} to pending?`
+            : '?')
+      )
+    ) {
+      return;
+    }
+
+    setRecalling(true);
+    setError(null);
+    setSyncResult(null);
+    setRecallResult(null);
+    try {
+      const result = await api.runRecall();
+      setRecallResult(result);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRecalling(false);
     }
   }
 
@@ -171,7 +205,6 @@ export default function App() {
 
   const pendingCount = events.filter((e) => e.status === 'pending').length;
   const syncableCount = events.filter((e) => e.status !== 'completed').length;
-
   if (checkingAuth) {
     return <div className="login-page"><div className="empty-state">Loading…</div></div>;
   }
@@ -209,10 +242,22 @@ export default function App() {
             Sign out
           </button>
           <button
+            className="btn-secondary"
+            onClick={handleRecallEvents}
+            disabled={
+              recalling ||
+              syncing ||
+              !settings?.icloud_configured
+            }
+          >
+            {recalling ? 'Recalling…' : 'Recall Events'}
+          </button>
+          <button
             className="btn-primary"
             onClick={handleSyncSmartEvents}
             disabled={
               syncing ||
+              recalling ||
               !settings?.icloud_configured ||
               syncableCount === 0
             }
@@ -223,6 +268,29 @@ export default function App() {
       </header>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      {recallResult && (
+        <div className="alert alert-success">
+          Removed <strong>{recallResult.calendarEventsRemoved}</strong> event
+          {recallResult.calendarEventsRemoved === 1 ? '' : 's'} from{' '}
+          <strong>{settings?.smart_calendar_name ?? 'Smart Events'}</strong>
+          {recallResult.smartEventsRecalled > 0 && (
+            <>
+              {' '}
+              and returned <strong>{recallResult.smartEventsRecalled}</strong> to
+              pending
+            </>
+          )}
+          .
+          {recallResult.errors.length > 0 && (
+            <div className="sync-result" style={{ marginTop: '0.5rem' }}>
+              {recallResult.errors.map((e, i) => (
+                <div key={i}>{e}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {syncResult && (
         <div className="alert alert-success">

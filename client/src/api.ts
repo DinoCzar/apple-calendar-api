@@ -1,4 +1,10 @@
-import type { AppSettings, AppleEventPreview, SmartEvent, SyncResult } from './types';
+import type {
+  AppSettings,
+  AppleEventPreview,
+  RecallResult,
+  SmartEvent,
+  SyncResult,
+} from './types';
 
 const API = '/api';
 
@@ -71,6 +77,10 @@ export const api = {
     request<SyncResult>('/sync', {
       method: 'POST',
       body: JSON.stringify({ reschedule }),
+    }),
+  runRecall: () =>
+    request<RecallResult>('/sync/recall', {
+      method: 'POST',
     }),
   previewBusyEvents: () =>
     request<{ busy_events: AppleEventPreview[] }>('/sync/preview'),

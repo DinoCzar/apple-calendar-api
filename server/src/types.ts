@@ -65,3 +65,9 @@ export interface SyncResult {
   smartEventsSynced: number;
   errors: string[];
 }
+
+export interface RecallResult {
+  calendarEventsRemoved: number;
+  smartEventsRecalled: number;
+  errors: string[];
+}

@@ -31,6 +31,12 @@ export interface SyncResult {
   errors: string[];
 }
 
+export interface RecallResult {
+  calendarEventsRemoved: number;
+  smartEventsRecalled: number;
+  errors: string[];
+}
+
 export interface AppleEventPreview {
   title: string;
   start: string;

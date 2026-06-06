@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getSettings } from '../db';
 import { fetchAllBusyEvents, getScheduleFetchRange } from '../services/caldav';
-import { runFullSync } from '../services/sync';
+import { runFullSync, runRecall } from '../services/sync';
 import { isICloudConfigured } from '../config';
 
 const router = Router();
@@ -17,6 +17,22 @@ router.post('/', async (req, res) => {
 
     const reschedule = req.body?.reschedule !== false;
     const result = await runFullSync({ reschedule });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/recall', async (_req, res) => {
+  try {
+    if (!isICloudConfigured()) {
+      res.status(400).json({
+        error: 'iCloud not configured. Set ICLOUD_USERNAME and ICLOUD_APP_PASSWORD.',
+      });
+      return;
+    }
+
+    const result = await runRecall();
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
