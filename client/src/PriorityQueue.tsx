@@ -15,10 +15,21 @@ function sortByPriority(events: SmartEvent[]): SmartEvent[] {
   );
 }
 
-function getEventIdFromTouch(touch: Touch): string | null {
-  const el = document.elementFromPoint(touch.clientX, touch.clientY);
-  const item = el?.closest('[data-event-id]');
-  return item?.getAttribute('data-event-id') ?? null;
+function getTargetIndexFromY(
+  clientY: number,
+  orderedIds: string[],
+  listEl: HTMLElement | null
+): number {
+  if (!listEl || orderedIds.length === 0) return 0;
+
+  for (let i = 0; i < orderedIds.length; i++) {
+    const el = listEl.querySelector(`[data-event-id="${orderedIds[i]}"]`);
+    if (!el) continue;
+    const rect = el.getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) return i;
+  }
+
+  return orderedIds.length - 1;
 }
 
 function useIsMobileLayout(): boolean {
@@ -55,8 +66,16 @@ export default function PriorityQueue({
 }: PriorityQueueProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [touchPreview, setTouchPreview] = useState<SmartEvent[] | null>(null);
   const [saving, setSaving] = useState(false);
   const isMobile = useIsMobileLayout();
+
+  const listRef = useRef<HTMLDivElement>(null);
+  const reorderableRef = useRef<SmartEvent[]>([]);
+  const completedRef = useRef<SmartEvent[]>([]);
+  const touchStartOrderRef = useRef<string[]>([]);
+  const touchPreviewRef = useRef<SmartEvent[] | null>(null);
+  const draggedIdRef = useRef<string | null>(null);
 
   const reorderable = sortByPriority(
     events.filter((e) => e.status !== 'completed')
@@ -64,10 +83,12 @@ export default function PriorityQueue({
   const completed = sortByPriority(
     events.filter((e) => e.status === 'completed')
   );
-  const reorderableRef = useRef(reorderable);
-  const completedRef = useRef(completed);
   reorderableRef.current = reorderable;
   completedRef.current = completed;
+  draggedIdRef.current = draggedId;
+
+  const displayList = touchPreview ?? reorderable;
+  touchPreviewRef.current = touchPreview;
 
   async function persistOrder(reordered: SmartEvent[]) {
     setSaving(true);
@@ -82,35 +103,54 @@ export default function PriorityQueue({
       onError((err as Error).message);
     } finally {
       setSaving(false);
-      setDraggedId(null);
-      setDragOverId(null);
+      clearTouchDrag();
     }
+  }
+
+  function clearTouchDrag() {
+    setDraggedId(null);
+    setDragOverId(null);
+    setTouchPreview(null);
+    touchPreviewRef.current = null;
+    touchStartOrderRef.current = [];
+    document.body.classList.remove('mobile-drag-active');
+  }
+
+  function commitReorderedList(reordered: SmartEvent[]) {
+    const withPriority = reordered.map((e, i) => ({
+      ...e,
+      priority: i + 1,
+    }));
+    onChange([...withPriority, ...completedRef.current]);
+    persistOrder(withPriority);
   }
 
   function applyReorder(fromId: string, toId: string) {
     if (fromId === toId) {
-      setDraggedId(null);
-      setDragOverId(null);
+      clearTouchDrag();
       return;
     }
 
     const current = reorderableRef.current;
-    const done = completedRef.current;
     const fromIndex = current.findIndex((e) => e.id === fromId);
     const toIndex = current.findIndex((e) => e.id === toId);
     if (fromIndex === -1 || toIndex === -1) {
-      setDraggedId(null);
-      setDragOverId(null);
+      clearTouchDrag();
       return;
     }
 
-    const reordered = reorder(current, fromIndex, toIndex).map((e, i) => ({
-      ...e,
-      priority: i + 1,
-    }));
+    commitReorderedList(reorder(current, fromIndex, toIndex));
+  }
 
-    onChange([...reordered, ...done]);
-    persistOrder(reordered);
+  function moveByOffset(eventId: string, offset: number) {
+    if (saving) return;
+
+    const current = reorderableRef.current;
+    const fromIndex = current.findIndex((e) => e.id === eventId);
+    const toIndex = fromIndex + offset;
+    if (fromIndex === -1 || toIndex < 0 || toIndex >= current.length) return;
+
+    commitReorderedList(reorder(current, fromIndex, toIndex));
   }
 
   function handleDrop(targetId: string) {
@@ -134,32 +174,61 @@ export default function PriorityQueue({
     e.dataTransfer.effectAllowed = 'move';
   }
 
-  function handleTouchStart(eventId: string) {
+  function handleTouchStart(eventId: string, e: React.TouchEvent) {
     if (saving) return;
+
+    e.preventDefault();
+    const snapshot = [...reorderableRef.current];
+    touchStartOrderRef.current = snapshot.map((item) => item.id);
+    touchPreviewRef.current = snapshot;
     setDraggedId(eventId);
+    setTouchPreview(snapshot);
+    document.body.classList.add('mobile-drag-active');
   }
 
   useEffect(() => {
-    if (!draggedId || !isMobile) return;
+    if (!draggedId || !isMobile || !touchPreview) return;
 
     function onTouchMove(e: TouchEvent) {
       e.preventDefault();
       const touch = e.touches[0];
-      if (!touch) return;
-      const targetId = getEventIdFromTouch(touch);
-      if (targetId) setDragOverId(targetId);
+      const activeId = draggedIdRef.current;
+      const current = touchPreviewRef.current;
+      if (!touch || !activeId || !current || !listRef.current) return;
+
+      const fromIndex = current.findIndex((item) => item.id === activeId);
+      const toIndex = getTargetIndexFromY(
+        touch.clientY,
+        current.map((item) => item.id),
+        listRef.current
+      );
+
+      if (fromIndex === -1 || fromIndex === toIndex) return;
+
+      const next = reorder(current, fromIndex, toIndex);
+      touchPreviewRef.current = next;
+      setTouchPreview(next);
+      setDragOverId(next[toIndex]?.id ?? null);
     }
 
-    function endTouchDrag(e: TouchEvent) {
-      const touch = e.changedTouches[0];
-      if (!touch) return;
-      const targetId = getEventIdFromTouch(touch);
-      if (targetId && draggedId) {
-        applyReorder(draggedId, targetId);
-      } else {
-        setDraggedId(null);
-        setDragOverId(null);
+    function endTouchDrag() {
+      const current = touchPreviewRef.current;
+      const startOrder = touchStartOrderRef.current.join(',');
+
+      if (current) {
+        const endOrder = current.map((item) => item.id).join(',');
+        if (endOrder !== startOrder) {
+          const withPriority = current.map((item, i) => ({
+            ...item,
+            priority: i + 1,
+          }));
+          onChange([...withPriority, ...completedRef.current]);
+          persistOrder(withPriority);
+          return;
+        }
       }
+
+      clearTouchDrag();
     }
 
     document.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -170,8 +239,9 @@ export default function PriorityQueue({
       document.removeEventListener('touchmove', onTouchMove);
       document.removeEventListener('touchend', endTouchDrag);
       document.removeEventListener('touchcancel', endTouchDrag);
+      document.body.classList.remove('mobile-drag-active');
     };
-  }, [draggedId, isMobile]);
+  }, [draggedId, isMobile, touchPreview]);
 
   if (reorderable.length === 0 && completed.length === 0) {
     return (
@@ -191,12 +261,15 @@ export default function PriorityQueue({
               Drag any event to reorder priority — top slots fill first on sync.
             </span>
             <span className="priority-hint-mobile">
-              Touch and hold the drag tab below each event to reorder.
+              Use the arrows or drag the tab below each event to reorder.
             </span>
             {saving && <span className="priority-saving"> Saving…</span>}
           </p>
-          <div className="event-list priority-list">
-            {reorderable.map((event, index) => (
+          <div
+            ref={listRef}
+            className={`event-list priority-list ${draggedId ? 'priority-list-dragging' : ''}`}
+          >
+            {displayList.map((event, index) => (
               <div
                 key={event.id}
                 data-event-id={event.id}
@@ -241,19 +314,39 @@ export default function PriorityQueue({
                     onComplete={onComplete}
                   />
                 </div>
-                <div
-                  className="mobile-drag-tab"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Drag to reorder ${event.title}`}
-                  onTouchStart={() => handleTouchStart(event.id)}
-                >
-                  <svg width="14" height="10" viewBox="0 0 14 10" fill="currentColor" aria-hidden="true">
-                    <rect x="0" y="0" width="14" height="2" rx="1" />
-                    <rect x="0" y="4" width="14" height="2" rx="1" />
-                    <rect x="0" y="8" width="14" height="2" rx="1" />
-                  </svg>
-                  <span>Hold and drag to reorder</span>
+                <div className="mobile-reorder-bar">
+                  <div
+                    className="mobile-drag-tab"
+                    aria-label={`Drag to reorder ${event.title}`}
+                    onTouchStart={(e) => handleTouchStart(event.id, e)}
+                  >
+                    <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor" aria-hidden="true">
+                      <rect x="0" y="0" width="18" height="2.5" rx="1.25" />
+                      <rect x="0" y="4.75" width="18" height="2.5" rx="1.25" />
+                      <rect x="0" y="9.5" width="18" height="2.5" rx="1.25" />
+                    </svg>
+                    <span>Drag to move</span>
+                  </div>
+                  <div className="mobile-move-buttons">
+                    <button
+                      type="button"
+                      className="mobile-move-btn"
+                      aria-label={`Move ${event.title} up`}
+                      disabled={saving || index === 0}
+                      onClick={() => moveByOffset(event.id, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="mobile-move-btn"
+                      aria-label={`Move ${event.title} down`}
+                      disabled={saving || index === displayList.length - 1}
+                      onClick={() => moveByOffset(event.id, 1)}
+                    >
+                      ↓
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

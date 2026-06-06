@@ -270,8 +270,12 @@ label {
 }
 
 .event-item-draggable.dragging {
-  opacity: 0.45;
+  opacity: 1;
   border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transform: scale(1.02);
+  z-index: 2;
+  position: relative;
 }
 
 .event-item-draggable.drag-over {
@@ -476,6 +480,11 @@ label {
   margin-top: 0.5rem;
 }
 
+body.mobile-drag-active {
+  overflow: hidden;
+  touch-action: none;
+}
+
 @media (max-width: 768px) {
   .priority-hint-desktop {
     display: none;
@@ -487,20 +496,32 @@ label {
 
   .event-item-draggable {
     cursor: default;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+
+  .priority-list-dragging .event-item-draggable:not(.dragging) {
+    transition: transform 0.15s ease;
+  }
+
+  .mobile-reorder-bar {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
   }
 
   .mobile-drag-tab {
     display: flex;
+    flex: 1;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.7rem 1rem;
-    border-top: 1px solid var(--border);
-    background: var(--surface);
+    gap: 0.6rem;
+    min-height: 52px;
+    padding: 0.85rem 1rem;
     color: var(--text-muted);
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: 0.85rem;
+    font-weight: 600;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
@@ -510,5 +531,36 @@ label {
   .event-item-draggable.dragging .mobile-drag-tab {
     background: rgba(91, 141, 239, 0.12);
     color: var(--accent);
+  }
+
+  .mobile-move-buttons {
+    display: flex;
+    border-left: 1px solid var(--border);
+  }
+
+  .mobile-move-btn {
+    width: 52px;
+    min-height: 52px;
+    border: none;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .mobile-move-btn + .mobile-move-btn {
+    border-left: 1px solid var(--border);
+  }
+
+  .mobile-move-btn:active:not(:disabled) {
+    background: rgba(91, 141, 239, 0.12);
+    color: var(--accent);
+  }
+
+  .mobile-move-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
   }
 }
