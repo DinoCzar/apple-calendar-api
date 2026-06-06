@@ -14,7 +14,7 @@ import {
   pushSmartEventToCalendar,
 } from './caldav';
 import { scheduleSmartEvents } from './scheduler';
-import type { SyncResult } from '../types';
+import type { RecallResult, SyncResult } from '../types';
 
 export async function runFullSync(
   options: { reschedule?: boolean } = {}
@@ -96,6 +96,37 @@ export async function runFullSync(
         `Failed to sync "${event.title}" to Apple Calendar: ${(err as Error).message}`
       );
     }
+  }
+
+  return result;
+}
+
+export async function runRecall(): Promise<RecallResult> {
+  const result: RecallResult = {
+    calendarEventsRemoved: 0,
+    smartEventsRecalled: 0,
+    errors: [],
+  };
+
+  const settings = await getSettings();
+  const scheduled = await getScheduledSmartEvents();
+  result.smartEventsRecalled = scheduled.length;
+
+  try {
+    result.calendarEventsRemoved = await clearSmartEventsCalendar(settings);
+  } catch (err) {
+    result.errors.push(
+      `Failed to remove events from Smart Events calendar: ${(err as Error).message}`
+    );
+    return result;
+  }
+
+  try {
+    await resetScheduledSmartEvents();
+  } catch (err) {
+    result.errors.push(
+      `Failed to reset smart events in database: ${(err as Error).message}`
+    );
   }
 
   return result;
