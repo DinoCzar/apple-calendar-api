@@ -9,6 +9,12 @@ function reorder<T>(list: T[], fromIndex: number, toIndex: number): T[] {
   return result;
 }
 
+function sortByPriority(events: SmartEvent[]): SmartEvent[] {
+  return [...events].sort(
+    (a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at)
+  );
+}
+
 interface PriorityQueueProps {
   events: SmartEvent[];
   onChange: (events: SmartEvent[]) => void;
@@ -28,17 +34,22 @@ export default function PriorityQueue({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const pending = events
-    .filter((e) => e.status === 'pending')
-    .sort((a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at));
-
-  const other = events.filter((e) => e.status !== 'pending');
+  const reorderable = sortByPriority(
+    events.filter((e) => e.status !== 'completed')
+  );
+  const completed = sortByPriority(
+    events.filter((e) => e.status === 'completed')
+  );
 
   async function persistOrder(reordered: SmartEvent[]) {
     setSaving(true);
     try {
       const updated = await api.reorderSmartEvents(reordered.map((e) => e.id));
-      onChange(updated);
+      const completedIds = new Set(completed.map((e) => e.id));
+      onChange([
+        ...sortByPriority(updated.filter((e) => !completedIds.has(e.id))),
+        ...completed,
+      ]);
     } catch (err) {
       onError((err as Error).message);
     } finally {
@@ -51,45 +62,66 @@ export default function PriorityQueue({
   function handleDrop(targetId: string) {
     if (!draggedId || draggedId === targetId) return;
 
-    const fromIndex = pending.findIndex((e) => e.id === draggedId);
-    const toIndex = pending.findIndex((e) => e.id === targetId);
+    const fromIndex = reorderable.findIndex((e) => e.id === draggedId);
+    const toIndex = reorderable.findIndex((e) => e.id === targetId);
     if (fromIndex === -1 || toIndex === -1) return;
 
-    const reordered = reorder(pending, fromIndex, toIndex).map((e, i) => ({
+    const reordered = reorder(reorderable, fromIndex, toIndex).map((e, i) => ({
       ...e,
       priority: i + 1,
     }));
 
-    const nonPending = events.filter((e) => e.status !== 'pending');
-    onChange([...reordered, ...nonPending]);
+    onChange([...reordered, ...completed]);
     persistOrder(reordered);
   }
 
-  if (pending.length === 0 && other.length === 0) {
+  function handleDragStart(eventId: string, e: React.DragEvent) {
+    if (saving) {
+      e.preventDefault();
+      return;
+    }
+
+    const target = e.target as HTMLElement;
+    if (target.closest('button, .event-actions')) {
+      e.preventDefault();
+      return;
+    }
+
+    setDraggedId(eventId);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  if (reorderable.length === 0 && completed.length === 0) {
     return (
       <div className="empty-state">
         <strong>No smart events yet</strong>
-        <p>Add a task above, then drag to set priority before syncing.</p>
+        <p>Add a task above, then drag to set priority.</p>
       </div>
     );
   }
 
   return (
     <>
-      {pending.length > 0 && (
+      {reorderable.length > 0 && (
         <div className="priority-section">
           <p className="priority-hint">
-            Drag to reorder by priority, then click <strong>Sync Smart Events</strong> to
-            place them in the first open slots and push to your Smart Events calendar.
+            Drag any event to reorder priority — top slots fill first on sync.
             {saving && <span className="priority-saving"> Saving…</span>}
           </p>
           <div className="event-list priority-list">
-            {pending.map((event, index) => (
+            {reorderable.map((event, index) => (
               <div
                 key={event.id}
                 className={`event-item event-item-draggable ${
                   draggedId === event.id ? 'dragging' : ''
                 } ${dragOverId === event.id && draggedId !== event.id ? 'drag-over' : ''}`}
+                draggable={!saving}
+                title="Drag to reorder"
+                onDragStart={(e) => handleDragStart(event.id, e)}
+                onDragEnd={() => {
+                  setDraggedId(null);
+                  setDragOverId(null);
+                }}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragOverId(event.id);
@@ -102,19 +134,7 @@ export default function PriorityQueue({
                   handleDrop(event.id);
                 }}
               >
-                <div
-                  className="drag-handle"
-                  title="Drag to reorder"
-                  draggable={!saving}
-                  onDragStart={(e) => {
-                    setDraggedId(event.id);
-                    e.dataTransfer.effectAllowed = 'move';
-                  }}
-                  onDragEnd={() => {
-                    setDraggedId(null);
-                    setDragOverId(null);
-                  }}
-                >
+                <div className="drag-handle" aria-hidden="true">
                   <span className="priority-rank">{index + 1}</span>
                   <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
                     <circle cx="2" cy="2" r="1.5" />
@@ -137,9 +157,9 @@ export default function PriorityQueue({
         </div>
       )}
 
-      {other.length > 0 && (
-        <div className={`event-list ${pending.length > 0 ? 'scheduled-list' : ''}`}>
-          {other.map((event) => (
+      {completed.length > 0 && (
+        <div className={`event-list ${reorderable.length > 0 ? 'scheduled-list' : ''}`}>
+          {completed.map((event) => (
             <div key={event.id} className="event-item">
               <EventBody event={event} />
               <EventActions
@@ -164,7 +184,7 @@ function EventBody({ event }: { event: SmartEvent }) {
       )}
       <div className="event-meta">
         <span>{event.duration_minutes} min</span>
-        {event.status !== 'pending' && <span>Priority {event.priority}</span>}
+        <span>Priority {event.priority}</span>
         {event.scheduled_start && event.scheduled_end && (
           <span>
             {formatDateTime(event.scheduled_start)} →{' '}
