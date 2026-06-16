@@ -2,6 +2,8 @@ import {
   getPendingSmartEvents,
   getScheduledSmartEvents,
   getSettings,
+  getSmartEvent,
+  listSmartEvents,
   markSmartEventScheduled,
   markSmartEventSynced,
   resetScheduledSmartEvents,
@@ -88,9 +90,12 @@ export async function runFullSync(
 
   const pending = await getPendingSmartEvents();
   const alreadyScheduled = shouldReschedule ? [] : await getScheduledSmartEvents();
+  const schedulableEvents = shouldReschedule
+    ? (await listSmartEvents()).filter((e) => e.status !== 'completed')
+    : pending;
 
   const slots = scheduleSmartEvents(
-    pending,
+    schedulableEvents,
     appleEvents,
     alreadyScheduled,
     settings
@@ -100,21 +105,14 @@ export async function runFullSync(
     try {
       await markSmartEventScheduled(slot.smartEventId, slot.start, slot.end);
       result.smartEventsScheduled++;
-    } catch (err) {
-      result.errors.push(
-        `Failed to save schedule for ${slot.smartEventId}: ${(err as Error).message}`
-      );
-    }
-  }
 
-  const toSync = await getScheduledSmartEvents();
-  const unsynced = toSync.filter((e) => e.status === 'scheduled');
+      const event = await getSmartEvent(slot.smartEventId);
+      if (!event?.scheduled_start || !event.scheduled_end) {
+        result.errors.push(`Failed to load schedule for smart event ${slot.smartEventId}`);
+        continue;
+      }
 
-  for (const event of unsynced) {
-    if (!event.scheduled_start || !event.scheduled_end) continue;
-
-    const uid = generateEventUid();
-    try {
+      const uid = generateEventUid();
       await pushSmartEventToCalendar({
         settings,
         uid,
@@ -127,7 +125,7 @@ export async function runFullSync(
       result.smartEventsSynced++;
     } catch (err) {
       result.errors.push(
-        `Failed to sync "${event.title}" to Apple Calendar: ${(err as Error).message}`
+        `Failed to sync smart event ${slot.smartEventId}: ${(err as Error).message}`
       );
     }
   }
