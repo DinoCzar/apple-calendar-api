@@ -14,9 +14,51 @@ import {
   generateEventUid,
   getScheduleFetchRange,
   pushSmartEventToCalendar,
+  resetCaldavClient,
 } from './caldav';
 import { scheduleSmartEvents } from './scheduler';
-import type { RecallResult, SyncResult } from '../types';
+import type { AppSettings, RecallResult, SmartEvent, SyncResult } from '../types';
+
+const MAX_SCHEDULE_DAYS = 30;
+
+function effectiveScheduleDays(
+  settings: AppSettings,
+  pendingEvents: SmartEvent[]
+): number {
+  const configured = settings.schedule_days_ahead;
+  const pendingCount = pendingEvents.filter((e) => e.status === 'pending').length;
+  if (pendingCount <= 5) return configured;
+
+  return Math.min(
+    MAX_SCHEDULE_DAYS,
+    Math.max(configured, configured + Math.ceil(pendingCount / 2))
+  );
+}
+
+async function pushSmartEventWithRetry(params: {
+  settings: AppSettings;
+  uid: string;
+  title: string;
+  description?: string | null;
+  start: Date;
+  end: Date;
+}): Promise<void> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (attempt > 0) {
+        resetCaldavClient();
+      }
+      await pushSmartEventToCalendar(params);
+      return;
+    } catch (err) {
+      lastError = err as Error;
+    }
+  }
+
+  throw lastError ?? new Error('Failed to push smart event to Apple Calendar');
+}
 
 export async function runRecall(): Promise<RecallResult> {
   const result: RecallResult = {
@@ -58,11 +100,12 @@ export async function runFullSync(
     smartEventsCleared: 0,
     smartEventsScheduled: 0,
     smartEventsSynced: 0,
+    smartEventsUnscheduled: 0,
+    unscheduled_titles: [],
     errors: [],
   };
 
   const settings = await getSettings();
-  const { start: rangeStart, end: rangeEnd } = getScheduleFetchRange(settings);
   const shouldReschedule = options.reschedule !== false;
 
   if (shouldReschedule) {
@@ -73,7 +116,21 @@ export async function runFullSync(
     if (recallResult.errors.length > 0) {
       return result;
     }
+
+    await resetScheduledSmartEvents();
   }
+
+  const pending = await getPendingSmartEvents();
+  const schedulableEvents = shouldReschedule
+    ? (await listSmartEvents()).filter((e) => e.status !== 'completed')
+    : pending;
+  const scheduleDays = effectiveScheduleDays(settings, schedulableEvents);
+  const scheduleSettings: AppSettings = {
+    ...settings,
+    schedule_days_ahead: scheduleDays,
+  };
+  const { start: rangeStart, end: rangeEnd } =
+    getScheduleFetchRange(scheduleSettings);
 
   let appleEvents = [];
   try {
@@ -88,44 +145,51 @@ export async function runFullSync(
     return result;
   }
 
-  const pending = await getPendingSmartEvents();
   const alreadyScheduled = shouldReschedule ? [] : await getScheduledSmartEvents();
-  const schedulableEvents = shouldReschedule
-    ? (await listSmartEvents()).filter((e) => e.status !== 'completed')
-    : pending;
 
-  const slots = scheduleSmartEvents(
+  const { slots, unscheduled } = scheduleSmartEvents(
     schedulableEvents,
     appleEvents,
     alreadyScheduled,
-    settings
+    scheduleSettings
   );
 
+  result.smartEventsUnscheduled = unscheduled.length;
+  result.unscheduled_titles = unscheduled.map((event) => event.title);
+  if (unscheduled.length > 0) {
+    result.errors.push(
+      `${unscheduled.length} smart event${unscheduled.length === 1 ? '' : 's'} could not fit in the next ${scheduleDays} day${scheduleDays === 1 ? '' : 's'}: ${result.unscheduled_titles.join(', ')}`
+    );
+  }
+
   for (const slot of slots) {
+    const event = schedulableEvents.find((item) => item.id === slot.smartEventId);
+    const title = event?.title ?? slot.smartEventId;
+
     try {
       await markSmartEventScheduled(slot.smartEventId, slot.start, slot.end);
       result.smartEventsScheduled++;
 
-      const event = await getSmartEvent(slot.smartEventId);
-      if (!event?.scheduled_start || !event.scheduled_end) {
-        result.errors.push(`Failed to load schedule for smart event ${slot.smartEventId}`);
+      const saved = await getSmartEvent(slot.smartEventId);
+      if (!saved?.scheduled_start || !saved.scheduled_end) {
+        result.errors.push(`Failed to load schedule for "${title}"`);
         continue;
       }
 
       const uid = generateEventUid();
-      await pushSmartEventToCalendar({
+      await pushSmartEventWithRetry({
         settings,
         uid,
-        title: event.title,
-        description: event.description,
-        start: new Date(event.scheduled_start),
-        end: new Date(event.scheduled_end),
+        title: saved.title,
+        description: saved.description,
+        start: new Date(saved.scheduled_start),
+        end: new Date(saved.scheduled_end),
       });
-      await markSmartEventSynced(event.id, uid);
+      await markSmartEventSynced(saved.id, uid);
       result.smartEventsSynced++;
     } catch (err) {
       result.errors.push(
-        `Failed to sync smart event ${slot.smartEventId}: ${(err as Error).message}`
+        `Failed to sync "${title}" to Apple Calendar: ${(err as Error).message}`
       );
     }
   }

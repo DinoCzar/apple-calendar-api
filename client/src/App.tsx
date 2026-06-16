@@ -304,6 +304,17 @@ export default function App() {
           {syncResult.appleEventsFetched === 1 ? '' : 's'} from iCloud, and synced{' '}
           <strong>{syncResult.smartEventsSynced}</strong> to{' '}
           <strong>{settings?.smart_calendar_name ?? 'Smart Events'}</strong>.
+          {syncResult.smartEventsUnscheduled > 0 && (
+            <>
+              {' '}
+              <strong>{syncResult.smartEventsUnscheduled}</strong> could not fit in your
+              open calendar slots
+              {syncResult.unscheduled_titles?.length > 0 && (
+                <> ({syncResult.unscheduled_titles.join(', ')})</>
+              )}
+              .
+            </>
+          )}
           {syncResult.errors.length > 0 && (
             <div className="sync-result" style={{ marginTop: '0.5rem' }}>
               {syncResult.errors.map((e, i) => (

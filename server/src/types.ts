@@ -66,6 +66,8 @@ export interface SyncResult {
   smartEventsCleared: number;
   smartEventsScheduled: number;
   smartEventsSynced: number;
+  smartEventsUnscheduled: number;
+  unscheduled_titles: string[];
   errors: string[];
 }
 
