@@ -23,6 +23,32 @@ export interface AppSettings {
   icloud_configured?: boolean;
 }
 
+export type PersistedAppSettings = Omit<AppSettings, 'icloud_configured'>;
+
+export function toPersistedSettings(
+  settings: Partial<AppSettings>
+): Partial<PersistedAppSettings> {
+  const {
+    apple_calendar_name,
+    smart_calendar_name,
+    working_hours_start,
+    working_hours_end,
+    schedule_days_ahead,
+    min_gap_minutes,
+    timezone,
+  } = settings;
+
+  return {
+    ...(apple_calendar_name !== undefined ? { apple_calendar_name } : {}),
+    ...(smart_calendar_name !== undefined ? { smart_calendar_name } : {}),
+    ...(working_hours_start !== undefined ? { working_hours_start } : {}),
+    ...(working_hours_end !== undefined ? { working_hours_end } : {}),
+    ...(schedule_days_ahead !== undefined ? { schedule_days_ahead } : {}),
+    ...(min_gap_minutes !== undefined ? { min_gap_minutes } : {}),
+    ...(timezone !== undefined ? { timezone } : {}),
+  };
+}
+
 export interface SyncResult {
   appleEventsFetched: number;
   smartEventsCleared: number;

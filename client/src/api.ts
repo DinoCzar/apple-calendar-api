@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   AppleEventPreview,
+  PersistedAppSettings,
   RecallResult,
   SmartEvent,
   SyncResult,
@@ -66,10 +67,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ ids }),
     }),
-  getSettings: () => request<AppSettings>('/settings'),
-  updateSettings: (data: Partial<AppSettings>) =>
+  getSettings: () =>
+    request<AppSettings>('/settings', { cache: 'no-store' }),
+  updateSettings: (data: Partial<PersistedAppSettings>) =>
     request<AppSettings>('/settings', {
       method: 'PUT',
+      cache: 'no-store',
       body: JSON.stringify(data),
     }),
   listCalendars: () => request<{ name: string; url: string }[]>('/settings/calendars'),

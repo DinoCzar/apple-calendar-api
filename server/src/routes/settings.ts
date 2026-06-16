@@ -8,6 +8,7 @@ const router = Router();
 
 router.get('/', async (_req, res) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const settings = await getSettings();
     res.json({
       ...settings,
@@ -22,7 +23,11 @@ router.put('/', async (req, res) => {
   try {
     const updates = req.body as Partial<AppSettings>;
     const settings = await updateSettings(updates);
-    res.json(settings);
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ...settings,
+      icloud_configured: isICloudConfigured(),
+    });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

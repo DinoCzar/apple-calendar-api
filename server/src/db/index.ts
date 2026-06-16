@@ -60,19 +60,6 @@ export async function initDb(): Promise<void> {
   await client.execute(SMART_EVENTS_SCHEMA);
   await client.execute(SETTINGS_SCHEMA);
   await seedDefaultSettings();
-  await applyDefaultWorkingHours();
-}
-
-async function applyDefaultWorkingHours(): Promise<void> {
-  const client = getDb();
-  await client.execute({
-    sql: `UPDATE settings SET value = ? WHERE key = 'working_hours_start'`,
-    args: [config.defaults.workingHoursStart],
-  });
-  await client.execute({
-    sql: `UPDATE settings SET value = ? WHERE key = 'working_hours_end'`,
-    args: [config.defaults.workingHoursEnd],
-  });
 }
 
 async function seedDefaultSettings(): Promise<void> {
@@ -133,11 +120,22 @@ export async function getSettings(): Promise<AppSettings> {
   };
 }
 
+const SETTINGS_KEYS: (keyof AppSettings)[] = [
+  'apple_calendar_name',
+  'smart_calendar_name',
+  'working_hours_start',
+  'working_hours_end',
+  'schedule_days_ahead',
+  'min_gap_minutes',
+  'timezone',
+];
+
 export async function updateSettings(
   updates: Partial<AppSettings>
 ): Promise<AppSettings> {
   const client = getDb();
-  for (const [key, value] of Object.entries(updates)) {
+  for (const key of SETTINGS_KEYS) {
+    const value = updates[key];
     if (value !== undefined) {
       await client.execute({
         sql: `INSERT INTO settings (key, value) VALUES (?, ?)

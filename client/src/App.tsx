@@ -3,6 +3,7 @@ import { api, AuthError } from './api';
 import Login from './Login';
 import PriorityQueue from './PriorityQueue';
 import type { AppSettings, RecallResult, SmartEvent, SyncResult } from './types';
+import { toPersistedSettings } from './types';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -193,7 +194,7 @@ export default function App() {
     setSavingSettings(true);
     setError(null);
     try {
-      const updated = await api.updateSettings(settingsDraft);
+      const updated = await api.updateSettings(toPersistedSettings(settingsDraft));
       setSettings(updated);
       setSettingsDraft(updated);
     } catch (err) {
