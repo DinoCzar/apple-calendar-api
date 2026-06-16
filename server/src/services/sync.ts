@@ -16,11 +16,43 @@ import {
 import { scheduleSmartEvents } from './scheduler';
 import type { RecallResult, SyncResult } from '../types';
 
+export async function runRecall(): Promise<RecallResult> {
+  const result: RecallResult = {
+    calendarEventsRemoved: 0,
+    smartEventsRecalled: 0,
+    errors: [],
+  };
+
+  const settings = await getSettings();
+  const scheduled = await getScheduledSmartEvents();
+  result.smartEventsRecalled = scheduled.length;
+
+  try {
+    result.calendarEventsRemoved = await clearSmartEventsCalendar(settings);
+  } catch (err) {
+    result.errors.push(
+      `Failed to remove events from Smart Events calendar: ${(err as Error).message}`
+    );
+    return result;
+  }
+
+  try {
+    await resetScheduledSmartEvents();
+  } catch (err) {
+    result.errors.push(
+      `Failed to reset smart events in database: ${(err as Error).message}`
+    );
+  }
+
+  return result;
+}
+
 export async function runFullSync(
   options: { reschedule?: boolean } = {}
 ): Promise<SyncResult> {
   const result: SyncResult = {
     appleEventsFetched: 0,
+    smartEventsRecalled: 0,
     smartEventsCleared: 0,
     smartEventsScheduled: 0,
     smartEventsSynced: 0,
@@ -37,21 +69,22 @@ export async function runFullSync(
     });
     result.appleEventsFetched = appleEvents.length;
   } catch (err) {
-    result.errors.push(`Failed to fetch calendar events: ${(err as Error).message}`);
+    result.errors.push(
+      `Failed to refresh busy calendar events: ${(err as Error).message}`
+    );
     return result;
   }
 
   const shouldReschedule = options.reschedule !== false;
 
   if (shouldReschedule) {
-    try {
-      result.smartEventsCleared = await clearSmartEventsCalendar(settings);
-    } catch (err) {
-      result.errors.push(
-        `Failed to clear old events from Smart Events calendar: ${(err as Error).message}`
-      );
+    const recallResult = await runRecall();
+    result.smartEventsRecalled = recallResult.smartEventsRecalled;
+    result.smartEventsCleared = recallResult.calendarEventsRemoved;
+    result.errors.push(...recallResult.errors);
+    if (recallResult.errors.length > 0) {
+      return result;
     }
-    await resetScheduledSmartEvents();
   }
 
   const pending = await getPendingSmartEvents();
@@ -98,37 +131,6 @@ export async function runFullSync(
         `Failed to sync "${event.title}" to Apple Calendar: ${(err as Error).message}`
       );
     }
-  }
-
-  return result;
-}
-
-export async function runRecall(): Promise<RecallResult> {
-  const result: RecallResult = {
-    calendarEventsRemoved: 0,
-    smartEventsRecalled: 0,
-    errors: [],
-  };
-
-  const settings = await getSettings();
-  const scheduled = await getScheduledSmartEvents();
-  result.smartEventsRecalled = scheduled.length;
-
-  try {
-    result.calendarEventsRemoved = await clearSmartEventsCalendar(settings);
-  } catch (err) {
-    result.errors.push(
-      `Failed to remove events from Smart Events calendar: ${(err as Error).message}`
-    );
-    return result;
-  }
-
-  try {
-    await resetScheduledSmartEvents();
-  } catch (err) {
-    result.errors.push(
-      `Failed to reset smart events in database: ${(err as Error).message}`
-    );
   }
 
   return result;

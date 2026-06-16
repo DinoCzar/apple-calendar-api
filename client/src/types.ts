@@ -51,6 +51,7 @@ export function toPersistedSettings(
 
 export interface SyncResult {
   appleEventsFetched: number;
+  smartEventsRecalled: number;
   smartEventsCleared: number;
   smartEventsScheduled: number;
   smartEventsSynced: number;

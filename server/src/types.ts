@@ -62,6 +62,7 @@ export interface ScheduledSlot {
 
 export interface SyncResult {
   appleEventsFetched: number;
+  smartEventsRecalled: number;
   smartEventsCleared: number;
   smartEventsScheduled: number;
   smartEventsSynced: number;

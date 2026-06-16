@@ -37,6 +37,7 @@ export default function App() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [icloudCalendars, setIcloudCalendars] = useState<string[]>([]);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
+  const [busyPreviewRefresh, setBusyPreviewRefresh] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,6 +139,7 @@ export default function App() {
     try {
       const result = await api.runSync(true);
       setSyncResult(result);
+      setBusyPreviewRefresh((n) => n + 1);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -220,11 +222,8 @@ export default function App() {
         <div>
           <h1>Smart Events</h1>
           <p>
-            Drag to set priority, then sync — smart events fill open slots between{' '}
-            <strong>
-              {settings?.working_hours_start ?? '08:00'}–{settings?.working_hours_end ?? '21:00'}
-            </strong>{' '}
-            when no other iCloud events are scheduled, then push to{' '}
+            Drag to set priority, then sync — refreshes iCloud busy times, recalls old
+            smart events, and pushes a new schedule to{' '}
             <strong>{settings?.smart_calendar_name ?? 'Smart Events'}</strong>.
           </p>
           {settings && (
@@ -295,11 +294,16 @@ export default function App() {
 
       {syncResult && (
         <div className="alert alert-success">
-          Replaced <strong>{syncResult.smartEventsCleared}</strong> old event
-          {syncResult.smartEventsCleared === 1 ? '' : 's'} with{' '}
-          <strong>{syncResult.smartEventsSynced}</strong> new on{' '}
-          <strong>{settings?.smart_calendar_name ?? 'Smart Events'}</strong>{' '}
-          ({syncResult.appleEventsFetched} busy blocks across all iCloud calendars).
+          Refreshed <strong>{syncResult.appleEventsFetched}</strong> busy block
+          {syncResult.appleEventsFetched === 1 ? '' : 's'} from iCloud
+          {syncResult.smartEventsCleared > 0 && (
+            <>
+              , recalled <strong>{syncResult.smartEventsCleared}</strong> old smart
+              event{syncResult.smartEventsCleared === 1 ? '' : 's'}
+            </>
+          )}
+          , and synced <strong>{syncResult.smartEventsSynced}</strong> to{' '}
+          <strong>{settings?.smart_calendar_name ?? 'Smart Events'}</strong>.
           {syncResult.errors.length > 0 && (
             <div className="sync-result" style={{ marginTop: '0.5rem' }}>
               {syncResult.errors.map((e, i) => (
@@ -520,14 +524,23 @@ export default function App() {
             </form>
           </div>
 
-          <BusyTimesPreview configured={settings?.icloud_configured ?? false} />
+          <BusyTimesPreview
+            configured={settings?.icloud_configured ?? false}
+            refreshToken={busyPreviewRefresh}
+          />
         </aside>
       </div>
     </div>
   );
 }
 
-function BusyTimesPreview({ configured }: { configured: boolean }) {
+function BusyTimesPreview({
+  configured,
+  refreshToken,
+}: {
+  configured: boolean;
+  refreshToken: number;
+}) {
   const [events, setEvents] = useState<
     { title: string; start: string; end: string }[]
   >([]);
@@ -552,7 +565,7 @@ function BusyTimesPreview({ configured }: { configured: boolean }) {
 
   useEffect(() => {
     loadPreview(true);
-  }, [configured]);
+  }, [configured, refreshToken]);
 
   return (
     <div className="card">
