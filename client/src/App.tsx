@@ -222,8 +222,8 @@ export default function App() {
         <div>
           <h1>Smart Events</h1>
           <p>
-            Drag to set priority, then sync — refreshes iCloud busy times, recalls old
-            smart events, and pushes a new schedule to{' '}
+            Drag to set priority, then sync — recalls old smart events, refreshes iCloud
+            busy times, and pushes a new schedule to{' '}
             <strong>{settings?.smart_calendar_name ?? 'Smart Events'}</strong>.
           </p>
           {settings && (
@@ -294,15 +294,15 @@ export default function App() {
 
       {syncResult && (
         <div className="alert alert-success">
-          Refreshed <strong>{syncResult.appleEventsFetched}</strong> busy block
-          {syncResult.appleEventsFetched === 1 ? '' : 's'} from iCloud
           {syncResult.smartEventsCleared > 0 && (
             <>
-              , recalled <strong>{syncResult.smartEventsCleared}</strong> old smart
-              event{syncResult.smartEventsCleared === 1 ? '' : 's'}
+              Recalled <strong>{syncResult.smartEventsCleared}</strong> old smart
+              event{syncResult.smartEventsCleared === 1 ? '' : 's'},{' '}
             </>
           )}
-          , and synced <strong>{syncResult.smartEventsSynced}</strong> to{' '}
+          refreshed <strong>{syncResult.appleEventsFetched}</strong> busy block
+          {syncResult.appleEventsFetched === 1 ? '' : 's'} from iCloud, and synced{' '}
+          <strong>{syncResult.smartEventsSynced}</strong> to{' '}
           <strong>{settings?.smart_calendar_name ?? 'Smart Events'}</strong>.
           {syncResult.errors.length > 0 && (
             <div className="sync-result" style={{ marginTop: '0.5rem' }}>

@@ -61,6 +61,17 @@ export async function runFullSync(
 
   const settings = await getSettings();
   const { start: rangeStart, end: rangeEnd } = getScheduleFetchRange(settings);
+  const shouldReschedule = options.reschedule !== false;
+
+  if (shouldReschedule) {
+    const recallResult = await runRecall();
+    result.smartEventsRecalled = recallResult.smartEventsRecalled;
+    result.smartEventsCleared = recallResult.calendarEventsRemoved;
+    result.errors.push(...recallResult.errors);
+    if (recallResult.errors.length > 0) {
+      return result;
+    }
+  }
 
   let appleEvents = [];
   try {
@@ -73,18 +84,6 @@ export async function runFullSync(
       `Failed to refresh busy calendar events: ${(err as Error).message}`
     );
     return result;
-  }
-
-  const shouldReschedule = options.reschedule !== false;
-
-  if (shouldReschedule) {
-    const recallResult = await runRecall();
-    result.smartEventsRecalled = recallResult.smartEventsRecalled;
-    result.smartEventsCleared = recallResult.calendarEventsRemoved;
-    result.errors.push(...recallResult.errors);
-    if (recallResult.errors.length > 0) {
-      return result;
-    }
   }
 
   const pending = await getPendingSmartEvents();
