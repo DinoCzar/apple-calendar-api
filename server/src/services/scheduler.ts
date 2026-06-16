@@ -211,17 +211,24 @@ function canPlaceWithoutOverlap(
   });
 }
 
+export interface ScheduleResult {
+  slots: ScheduledSlot[];
+  unscheduled: { id: string; title: string }[];
+}
+
 export function scheduleSmartEvents(
   smartEvents: SmartEvent[],
   calendarEvents: CalendarEvent[],
   alreadyScheduled: SmartEvent[],
   settings: AppSettings
-): ScheduledSlot[] {
+): ScheduleResult {
   const pending = [...smartEvents]
     .filter((e) => e.status === 'pending')
     .sort((a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at));
 
-  if (pending.length === 0) return [];
+  if (pending.length === 0) {
+    return { slots: [], unscheduled: [] };
+  }
 
   const now = new Date();
   const rangeStart = startOfDayInTimezone(now, settings.timezone);
@@ -246,53 +253,63 @@ export function scheduleSmartEvents(
 
   const scheduled: ScheduledSlot[] = [];
   const placedSlots: TimeSlot[] = [];
+  const unscheduled: { id: string; title: string }[] = [];
 
   while (pending.length > 0) {
-    const event = pending[0];
-    const durationMs = event.duration_minutes * 60 * 1000;
-    let placed = false;
+    const pendingBefore = pending.length;
 
-    for (let d = 0; d < settings.schedule_days_ahead && !placed; d++) {
+    for (let d = 0; d < settings.schedule_days_ahead; d++) {
       const day = addDaysInTimezone(rangeStart, d, settings.timezone);
       const dayKey = formatDateInTimezone(day, settings.timezone);
       const dayBusy = [...(busyByDay.get(dayKey) || []), ...placedSlots];
       const freeSlots = findFreeSlotsForDay(day, settings, dayBusy);
 
       for (const free of freeSlots) {
-        if (placed) break;
-
         let slotCursor = free.start;
         if (slotCursor < now) {
           slotCursor = new Date(Math.max(slotCursor.getTime(), now.getTime() + gapMs));
         }
 
-        while (slotCursor.getTime() + durationMs <= free.end.getTime()) {
+        while (pending.length > 0) {
+          const event = pending[0];
+          const durationMs = event.duration_minutes * 60 * 1000;
+
+          if (slotCursor.getTime() + durationMs > free.end.getTime()) {
+            break;
+          }
+
           const candidate: TimeSlot = {
             start: new Date(slotCursor),
             end: new Date(slotCursor.getTime() + durationMs),
           };
 
-          if (canPlaceWithoutOverlap(candidate, [...allBusy, ...placedSlots], gapMs)) {
-            scheduled.push({
-              smartEventId: event.id,
-              start: candidate.start,
-              end: candidate.end,
-            });
-            placedSlots.push(candidate);
-            placed = true;
-            pending.shift();
-            break;
+          if (!canPlaceWithoutOverlap(candidate, [...allBusy, ...placedSlots], gapMs)) {
+            slotCursor = new Date(slotCursor.getTime() + 15 * 60 * 1000);
+            if (slotCursor.getTime() + durationMs > free.end.getTime()) {
+              break;
+            }
+            continue;
           }
 
-          slotCursor = new Date(slotCursor.getTime() + 15 * 60 * 1000);
+          scheduled.push({
+            smartEventId: event.id,
+            start: candidate.start,
+            end: candidate.end,
+          });
+          placedSlots.push(candidate);
+          pending.shift();
+          slotCursor = new Date(candidate.end.getTime() + gapMs);
         }
       }
     }
 
-    if (!placed) {
-      pending.shift();
+    if (pending.length === pendingBefore) {
+      const skipped = pending.shift();
+      if (skipped) {
+        unscheduled.push({ id: skipped.id, title: skipped.title });
+      }
     }
   }
 
-  return scheduled;
+  return { slots: scheduled, unscheduled };
 }
