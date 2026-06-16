@@ -19,11 +19,11 @@
     "postbuild": "test -f client/dist/index.html || (echo 'Missing client build' && exit 1)"
   },
   "dependencies": {
+    "@libsql/client": "^0.15.15",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "pg": "^8.13.1",
     "rrule": "^2.8.1",
     "tsdav": "^2.1.2",
     "uuid": "^11.0.5"
@@ -33,7 +33,6 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
-    "@types/pg": "^8.11.10",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@types/uuid": "^10.0.0",
