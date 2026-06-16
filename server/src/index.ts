@@ -3,7 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import fs from 'fs';
 import path from 'path';
-import { config, isAuthConfigured, isICloudConfigured } from './config';
+import { config, isAuthConfigured, isICloudConfigured, isTursoConfigured } from './config';
 import { initDb } from './db';
 import { requireAuth } from './middleware/auth';
 import authRouter from './routes/auth';
@@ -29,10 +29,10 @@ function resolveClientDist(): string {
 async function main() {
   if (
     process.env.NODE_ENV === 'production' &&
-    (!isAuthConfigured() || !isICloudConfigured())
+    (!isAuthConfigured() || !isICloudConfigured() || !isTursoConfigured())
   ) {
     throw new Error(
-      'Set AUTH_PASSWORD, SESSION_SECRET, ICLOUD_USERNAME, and ICLOUD_APP_PASSWORD for production'
+      'Set AUTH_PASSWORD, SESSION_SECRET, ICLOUD_USERNAME, ICLOUD_APP_PASSWORD, TURSO_DATABASE_URL, and TURSO_AUTH_TOKEN for production'
     );
   }
 

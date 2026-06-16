@@ -1,18 +1,9 @@
-import { pool, initDb } from './index';
-import { config } from '../config';
+import { closeDb, initDb } from './index';
 
 async function migrate() {
   await initDb();
-  await pool.query(
-    `UPDATE settings SET value = $1 WHERE key = 'working_hours_start'`,
-    [config.defaults.workingHoursStart]
-  );
-  await pool.query(
-    `UPDATE settings SET value = $1 WHERE key = 'working_hours_end'`,
-    [config.defaults.workingHoursEnd]
-  );
   console.log('Database migration complete');
-  await pool.end();
+  await closeDb();
 }
 
 migrate().catch((err) => {

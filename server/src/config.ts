@@ -4,7 +4,11 @@ dotenv.config();
 
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
-  databaseUrl: process.env.DATABASE_URL || '',
+  turso: {
+    url: process.env.TURSO_DATABASE_URL || process.env.LIBSQL_URL || '',
+    authToken:
+      process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || '',
+  },
   icloud: {
     username: process.env.ICLOUD_USERNAME || '',
     password: process.env.ICLOUD_APP_PASSWORD || '',
@@ -37,4 +41,8 @@ export function isAuthConfigured(): boolean {
       config.auth.password &&
       config.auth.sessionSecret
   );
+}
+
+export function isTursoConfigured(): boolean {
+  return Boolean(config.turso.url);
 }
