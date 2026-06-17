@@ -5,6 +5,10 @@ import type {
   SmartEvent,
   TimeSlot,
 } from '../types';
+import {
+  getScheduleEarliestInstant,
+  getScheduleRangeStart,
+} from './caldav';
 
 function partsInTimezone(date: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -231,7 +235,7 @@ export function scheduleSmartEvents(
   }
 
   const now = new Date();
-  const rangeStart = startOfDayInTimezone(now, settings.timezone);
+  const rangeStart = getScheduleRangeStart(settings, now);
   const gapMs = settings.min_gap_minutes * 60 * 1000;
 
   const allBusy: TimeSlot[] = [
@@ -266,8 +270,17 @@ export function scheduleSmartEvents(
 
       for (const free of freeSlots) {
         let slotCursor = free.start;
-        if (slotCursor < now) {
-          slotCursor = new Date(Math.max(slotCursor.getTime(), now.getTime() + gapMs));
+        const earliest = getScheduleEarliestInstant(settings, day, now);
+        if (slotCursor < earliest) {
+          slotCursor = new Date(Math.max(slotCursor.getTime(), earliest.getTime()));
+          if (
+            formatDateInTimezone(day, settings.timezone) ===
+            formatDateInTimezone(now, settings.timezone)
+          ) {
+            slotCursor = new Date(
+              Math.max(slotCursor.getTime(), earliest.getTime() + gapMs)
+            );
+          }
         }
 
         while (pending.length > 0) {
