@@ -4,6 +4,7 @@ import PriorityQueue from './PriorityQueue';
 import type { AppSettings, SmartEvent, SyncResult } from './types';
 import { toPersistedSettings } from './types';
 import { getWorkspaceConfig, type WorkspaceId } from './workspaces';
+import { ALL_SCHEDULE_WEEKDAYS, SCHEDULE_WEEKDAYS } from './weekdays';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -161,6 +162,13 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
       return;
     }
 
+    const selectedDays =
+      settingsDraft.schedule_days_of_week ?? ALL_SCHEDULE_WEEKDAYS;
+    if (selectedDays.length === 0) {
+      setError('Select at least one day of the week for scheduling.');
+      return;
+    }
+
     setSavingSettings(true);
     setError(null);
     try {
@@ -185,6 +193,18 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
   const pendingCount = events.filter((e) => e.status === 'pending').length;
   const syncableCount = events.filter((e) => e.status !== 'completed').length;
   const calendarName = settings?.smart_calendar_name ?? config.defaultCalendarName;
+  const selectedWeekdays =
+    settingsDraft.schedule_days_of_week ?? ALL_SCHEDULE_WEEKDAYS;
+
+  function toggleScheduleWeekday(day: number) {
+    setSettingsDraft((current) => {
+      const days = current.schedule_days_of_week ?? ALL_SCHEDULE_WEEKDAYS;
+      const next = days.includes(day)
+        ? days.filter((value) => value !== day)
+        : [...days, day].sort((a, b) => a - b);
+      return { ...current, schedule_days_of_week: next };
+    });
+  }
 
   return (
     <>
@@ -453,6 +473,28 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                     }
                   />
                 </div>
+              </div>
+              <div style={{ marginTop: '0.75rem' }}>
+                <label>Schedule on these days</label>
+                <div className="weekday-picker" role="group" aria-label="Schedule days">
+                  {SCHEDULE_WEEKDAYS.map(({ value, label }) => {
+                    const active = selectedWeekdays.includes(value);
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        className={`weekday-toggle${active ? ' active' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => toggleScheduleWeekday(value)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="settings-hint">
+                  Events are only placed on selected days within your work hours.
+                </p>
               </div>
               <div className="form-row" style={{ marginTop: '0.75rem' }}>
                 <div>

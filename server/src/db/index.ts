@@ -6,6 +6,11 @@ import {
   settingsStorageKey,
   type WorkspaceId,
 } from '../workspace';
+import {
+  ALL_SCHEDULE_WEEKDAYS,
+  formatScheduleDaysOfWeek,
+  parseScheduleDaysOfWeek,
+} from '../services/schedule-days';
 
 let client: Client | null = null;
 
@@ -20,6 +25,7 @@ const DEFAULT_SETTINGS: Omit<AppSettings, 'smart_calendar_name'> & {
   timezone: 'America/Los_Angeles',
   schedule_start_use_default: true,
   schedule_start_date: null,
+  schedule_days_of_week: [...ALL_SCHEDULE_WEEKDAYS],
 };
 
 function getClient(): Client {
@@ -427,6 +433,9 @@ export async function getSettings(
       settings.schedule_start_date && settings.schedule_start_date.length > 0
         ? settings.schedule_start_date
         : defaults.schedule_start_date,
+    schedule_days_of_week: parseScheduleDaysOfWeek(
+      settings.schedule_days_of_week
+    ),
   };
 }
 
@@ -438,10 +447,13 @@ export async function updateSettings(
   for (const [key, value] of Object.entries(updates)) {
     if (value === undefined) continue;
     const storageKey = settingsStorageKey(workspace, key);
+    const storedValue = Array.isArray(value)
+      ? formatScheduleDaysOfWeek(value)
+      : String(value);
     await db.execute({
       sql: `INSERT INTO settings (key, value) VALUES (?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      args: [storageKey, String(value)],
+      args: [storageKey, storedValue],
     });
   }
   return getSettings(workspace);

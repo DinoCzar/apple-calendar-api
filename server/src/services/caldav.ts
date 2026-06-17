@@ -3,6 +3,7 @@ import { createDAVClient, DAVCalendar } from 'tsdav';
 import { v4 as uuidv4 } from 'uuid';
 import { config, isICloudConfigured } from '../config';
 import type { AppSettings, CalendarEvent } from '../types';
+import { isSchedulableDay } from './schedule-days';
 import { mapWithConcurrency } from '../utils/async';
 
 interface ParsedVEvent {
@@ -648,7 +649,11 @@ export function filterEventsToSchedulingWindow(
       let included = false;
 
       while (day < endDay) {
-        if (day >= rangeStart && day <= lastSchedulableDay) {
+        if (
+          day >= rangeStart &&
+          day <= lastSchedulableDay &&
+          isSchedulableDay(day, settings)
+        ) {
           included = true;
           break;
         }
@@ -663,6 +668,8 @@ export function filterEventsToSchedulingWindow(
 
     for (let d = 0; d < settings.schedule_days_ahead; d++) {
       const day = addDaysInTimezone(rangeStart, d, settings.timezone);
+      if (!isSchedulableDay(day, settings)) continue;
+
       const dayWorkStart = parseTimeOnDate(
         day,
         settings.working_hours_start,

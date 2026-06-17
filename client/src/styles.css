@@ -482,6 +482,30 @@ label {
   margin: 0;
 }
 
+.weekday-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.weekday-toggle {
+  min-width: 2.6rem;
+  padding: 0.45rem 0.55rem;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.weekday-toggle.active {
+  background: rgba(91, 141, 239, 0.18);
+  color: var(--accent);
+  border-color: rgba(91, 141, 239, 0.45);
+}
+
 .login-page {
   min-height: 100vh;
   display: flex;
