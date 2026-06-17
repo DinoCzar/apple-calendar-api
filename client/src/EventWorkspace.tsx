@@ -48,6 +48,7 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
   const [createRepeatDays, setCreateRepeatDays] = useState<number[]>([
     1, 2, 3, 4, 5,
   ]);
+  const [createRepeatTime, setCreateRepeatTime] = useState('09:00');
   const [creating, setCreating] = useState(false);
 
   const [settingsDraft, setSettingsDraft] = useState<Partial<AppSettings>>({});
@@ -115,7 +116,10 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
         duration_minutes: duration,
         priority: pendingCount + 1,
         ...(isRecurringWorkspace
-          ? { repeat_days_of_week: createRepeatDays }
+          ? {
+              repeat_days_of_week: createRepeatDays,
+              repeat_time_of_day: createRepeatTime,
+            }
           : {}),
       });
       setTitle('');
@@ -123,6 +127,7 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
       setDuration(30);
       if (isRecurringWorkspace) {
         setCreateRepeatDays([1, 2, 3, 4, 5]);
+        setCreateRepeatTime('09:00');
       }
       await load();
     } catch (err) {
@@ -354,6 +359,14 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                     Sync creates one weekly recurring event at the same time on each
                     selected day.
                   </p>
+                  <label htmlFor={`repeat-time-${workspace}`}>Time of day</label>
+                  <input
+                    id={`repeat-time-${workspace}`}
+                    type="time"
+                    value={createRepeatTime}
+                    onChange={(e) => setCreateRepeatTime(e.target.value)}
+                    required
+                  />
                 </div>
               )}
               <div>

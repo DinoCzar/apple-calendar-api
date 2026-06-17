@@ -69,6 +69,8 @@ function rowToSmartEvent(row: Record<string, unknown>): SmartEvent {
     repeat_days_of_week: row.repeat_days_of_week
       ? parseScheduleDaysOfWeek(String(row.repeat_days_of_week))
       : null,
+    repeat_time_of_day:
+      row.repeat_time_of_day != null ? String(row.repeat_time_of_day) : null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -120,6 +122,16 @@ async function migrateSmartEventsSchema(db: Client): Promise<void> {
     try {
       await db.execute(
         `ALTER TABLE smart_events ADD COLUMN repeat_days_of_week TEXT`
+      );
+    } catch {
+      // Column already exists
+    }
+  }
+
+  if (!columns.has('repeat_time_of_day')) {
+    try {
+      await db.execute(
+        `ALTER TABLE smart_events ADD COLUMN repeat_time_of_day TEXT`
       );
     } catch {
       // Column already exists
@@ -234,6 +246,7 @@ export async function createSmartEvent(
     duration_minutes?: number;
     priority?: number;
     repeat_days_of_week?: number[] | null;
+    repeat_time_of_day?: string | null;
   }
 ): Promise<SmartEvent> {
   const db = getClient();
@@ -250,8 +263,8 @@ export async function createSmartEvent(
 
   await db.execute({
     sql: `INSERT INTO smart_events
-          (id, title, description, duration_minutes, priority, status, workspace, repeat_days_of_week, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+          (id, title, description, duration_minutes, priority, status, workspace, repeat_days_of_week, repeat_time_of_day, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
     args: [
       id,
       data.title,
@@ -262,6 +275,7 @@ export async function createSmartEvent(
       data.repeat_days_of_week?.length
         ? formatScheduleDaysOfWeek(data.repeat_days_of_week)
         : null,
+      data.repeat_time_of_day ?? null,
       now,
       now,
     ],
