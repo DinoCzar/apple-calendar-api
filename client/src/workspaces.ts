@@ -1,5 +1,6 @@
 export const WORKSPACE_IDS = [
   'smart',
+  'grocery',
   'work',
   'home',
   'project',
@@ -29,6 +30,16 @@ export const WORKSPACES: WorkspaceConfig[] = [
     addButtonLabel: 'Add Smart Event',
     syncButtonLabel: 'Sync Smart Events',
     defaultCalendarName: 'Smart Events',
+  },
+  {
+    id: 'grocery',
+    label: 'Grocery Events',
+    eventLabel: 'Grocery Event',
+    eventsHeading: 'Your Grocery Events',
+    newEventHeading: 'New Grocery Event',
+    addButtonLabel: 'Add Grocery Event',
+    syncButtonLabel: 'Sync Grocery Events',
+    defaultCalendarName: 'Grocery Events',
   },
   {
     id: 'work',
