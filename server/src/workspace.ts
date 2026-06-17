@@ -2,6 +2,7 @@ import type { Request } from 'express';
 
 export const WORKSPACE_IDS = [
   'smart',
+  'grocery',
   'work',
   'home',
   'project',
@@ -12,6 +13,7 @@ export type WorkspaceId = (typeof WORKSPACE_IDS)[number];
 
 const DEFAULT_CALENDAR_NAMES: Record<WorkspaceId, string> = {
   smart: 'Smart Events',
+  grocery: 'Grocery Events',
   work: 'Work Events',
   home: 'Home Events',
   project: 'Project Events',
