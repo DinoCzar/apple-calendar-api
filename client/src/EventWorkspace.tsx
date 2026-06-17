@@ -485,7 +485,6 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                 onComplete={handleComplete}
                 onReorder={(ids) => workspaceApi.reorderSmartEvents(ids)}
                 showMoveToBottom={workspace === 'grocery'}
-                showGroceryTraits={workspace === 'grocery'}
                 onUpdateGroceryEvent={
                   isGroceryWorkspace ? handleUpdateGroceryEvent : undefined
                 }
