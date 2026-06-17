@@ -114,18 +114,21 @@ function stripGroceryUpdateFields(
   return rest;
 }
 
-function normalizeGroceryUpdate(
+function normalizeSmartEventUpdate(
   workspace: WorkspaceId,
   input: UpdateSmartEventInput
 ): UpdateSmartEventInput {
-  if (workspace !== 'grocery') {
-    return stripGroceryUpdateFields(input);
-  }
-
   const normalized = { ...input };
 
   if (input.title !== undefined) {
     normalized.title = input.title.trim();
+  }
+  if ('description' in input) {
+    normalized.description = normalizeOptionalText(input.description);
+  }
+
+  if (workspace !== 'grocery') {
+    return stripGroceryUpdateFields(normalized);
   }
 
   if ('grocery_sides' in input) {
@@ -180,7 +183,7 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const workspace = workspaceFromRequest(req);
-    const input = normalizeGroceryUpdate(
+    const input = normalizeSmartEventUpdate(
       workspace,
       req.body as UpdateSmartEventInput
     );

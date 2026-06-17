@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+  normalizeStandardEventUpdate,
+  toStandardEventUpdate,
+  type StandardEventUpdate,
+} from './event-edit';
 import { normalizeGroceryEventUpdate, toGroceryEventUpdate, type GroceryEventUpdate } from './grocery';
 import type { SmartEvent } from './types';
 import { formatRepeatDaysLabel } from './weekdays';
@@ -58,9 +63,14 @@ interface PriorityQueueProps {
   onComplete: (id: string) => void;
   onReorder: (ids: string[]) => Promise<SmartEvent[]>;
   showMoveToBottom?: boolean;
+  eventEditMode?: 'grocery' | 'standard';
   onUpdateGroceryEvent?: (
     id: string,
     data: GroceryEventUpdate
+  ) => Promise<SmartEvent>;
+  onUpdateStandardEvent?: (
+    id: string,
+    data: StandardEventUpdate
   ) => Promise<SmartEvent>;
 }
 
@@ -72,13 +82,15 @@ export default function PriorityQueue({
   onComplete,
   onReorder,
   showMoveToBottom = false,
+  eventEditMode,
   onUpdateGroceryEvent,
+  onUpdateStandardEvent,
 }: PriorityQueueProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [touchPreview, setTouchPreview] = useState<SmartEvent[] | null>(null);
   const [saving, setSaving] = useState(false);
-  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const isMobile = useIsMobileLayout();
 
@@ -176,9 +188,9 @@ export default function PriorityQueue({
     commitReorderedList(reorder(current, fromIndex, lastIndex));
   }
 
-  function toggleView(eventId: string) {
+  function toggleEdit(eventId: string) {
     if (savingEdit) return;
-    setViewingId((current) => (current === eventId ? null : eventId));
+    setEditingId((current) => (current === eventId ? null : eventId));
   }
 
   async function saveGroceryEdit(eventId: string, draft: GroceryEventUpdate) {
@@ -194,12 +206,70 @@ export default function PriorityQueue({
     try {
       const updated = await onUpdateGroceryEvent(eventId, normalized);
       onChange(events.map((event) => (event.id === eventId ? updated : event)));
-      setViewingId(null);
+      setEditingId(null);
     } catch (err) {
       onError((err as Error).message);
     } finally {
       setSavingEdit(false);
     }
+  }
+
+  async function saveStandardEdit(eventId: string, draft: StandardEventUpdate) {
+    if (!onUpdateStandardEvent) return;
+
+    const normalized = normalizeStandardEventUpdate(draft);
+    if (!normalized.title) {
+      onError('Title is required');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const updated = await onUpdateStandardEvent(eventId, normalized);
+      onChange(events.map((event) => (event.id === eventId ? updated : event)));
+      setEditingId(null);
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function renderEventEditForm(event: SmartEvent) {
+    if (eventEditMode === 'grocery' && onUpdateGroceryEvent) {
+      return (
+        <GroceryEventEditForm
+          event={event}
+          saving={savingEdit}
+          onCancel={() => setEditingId(null)}
+          onSave={(draft) => saveGroceryEdit(event.id, draft)}
+        />
+      );
+    }
+
+    if (eventEditMode === 'standard' && onUpdateStandardEvent) {
+      return (
+        <StandardEventEditForm
+          event={event}
+          saving={savingEdit}
+          onCancel={() => setEditingId(null)}
+          onSave={(draft) => saveStandardEdit(event.id, draft)}
+        />
+      );
+    }
+
+    return null;
+  }
+
+  function eventActionProps(event: SmartEvent) {
+    return {
+      event,
+      onDelete,
+      onComplete,
+      eventEditMode,
+      editDisabled: saving || savingEdit || (editingId !== null && editingId !== event.id),
+      onEditToggle: () => toggleEdit(event.id),
+    };
   }
 
   function handleDrop(targetId: string) {
@@ -319,7 +389,7 @@ export default function PriorityQueue({
             className={`event-list priority-list ${draggedId ? 'priority-list-dragging' : ''}`}
           >
             {displayList.map((event, index) => {
-              const isViewing = viewingId === event.id;
+              const isEditing = editingId === event.id;
 
               return (
               <div
@@ -328,10 +398,10 @@ export default function PriorityQueue({
                 className={`event-item event-item-draggable ${
                   draggedId === event.id ? 'dragging' : ''
                 } ${dragOverId === event.id && draggedId !== event.id ? 'drag-over' : ''}${
-                  isViewing ? ' event-item-editing' : ''
+                  isEditing ? ' event-item-editing' : ''
                 }`}
-                draggable={!saving && !savingEdit && !isMobile && !isViewing}
-                title={isMobile || isViewing ? undefined : 'Drag to reorder'}
+                draggable={!saving && !savingEdit && !isMobile && !isEditing}
+                title={isMobile || isEditing ? undefined : 'Drag to reorder'}
                 onDragStart={(e) => handleDragStart(event.id, e)}
                 onDragEnd={() => {
                   setDraggedId(null);
@@ -351,16 +421,11 @@ export default function PriorityQueue({
               >
                 <div
                   className={`event-item-content${
-                    isViewing ? ' event-item-content-editing' : ''
+                    isEditing ? ' event-item-content-editing' : ''
                   }`}
                 >
-                  {isViewing ? (
-                    <GroceryEventEditForm
-                      event={event}
-                      saving={savingEdit}
-                      onCancel={() => setViewingId(null)}
-                      onSave={(draft) => saveGroceryEdit(event.id, draft)}
-                    />
+                  {isEditing ? (
+                    renderEventEditForm(event)
                   ) : (
                     <>
                       <div className="drag-handle" aria-hidden="true">
@@ -376,25 +441,17 @@ export default function PriorityQueue({
                       </div>
                       <EventBody event={event} />
                       <EventActions
-                        event={event}
-                        onDelete={onDelete}
-                        onComplete={onComplete}
+                        {...eventActionProps(event)}
                         showMoveToBottom={showMoveToBottom}
                         moveToBottomDisabled={
                           saving || savingEdit || index === displayList.length - 1
                         }
                         onMoveToBottom={() => moveToBottom(event.id)}
-                        showGroceryView={Boolean(onUpdateGroceryEvent)}
-                        viewDisabled={
-                          saving || savingEdit || (viewingId !== null && viewingId !== event.id)
-                        }
-                        isViewing={false}
-                        onViewToggle={() => toggleView(event.id)}
                       />
                     </>
                   )}
                 </div>
-                {!isViewing && (
+                {!isEditing && (
                 <div className="mobile-reorder-bar">
                   <div
                     className="mobile-drag-tab"
@@ -442,27 +499,12 @@ export default function PriorityQueue({
           {completed.map((event) => (
             <div key={event.id} className="event-item">
               <div className="event-item-content event-item-content-static">
-                {viewingId === event.id ? (
-                  <GroceryEventEditForm
-                    event={event}
-                    saving={savingEdit}
-                    onCancel={() => setViewingId(null)}
-                    onSave={(draft) => saveGroceryEdit(event.id, draft)}
-                  />
+                {editingId === event.id ? (
+                  renderEventEditForm(event)
                 ) : (
                   <>
                     <EventBody event={event} />
-                    <EventActions
-                      event={event}
-                      onDelete={onDelete}
-                      onComplete={onComplete}
-                      showGroceryView={Boolean(onUpdateGroceryEvent)}
-                      viewDisabled={
-                        saving || savingEdit || (viewingId !== null && viewingId !== event.id)
-                      }
-                      isViewing={false}
-                      onViewToggle={() => toggleView(event.id)}
-                    />
+                    <EventActions {...eventActionProps(event)} />
                   </>
                 )}
               </div>
@@ -502,6 +544,79 @@ function EventBody({ event }: { event: SmartEvent }) {
         )}
       </div>
     </div>
+  );
+}
+
+function StandardEventEditForm({
+  event,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  event: SmartEvent;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (draft: StandardEventUpdate) => void;
+}) {
+  const [draft, setDraft] = useState(() => toStandardEventUpdate(event));
+
+  function updateDraft(partial: Partial<StandardEventUpdate>) {
+    setDraft((current) => ({ ...current, ...partial }));
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    onSave(draft);
+  }
+
+  return (
+    <form className="event-edit-form" onSubmit={handleSubmit}>
+      <div>
+        <label htmlFor={`edit-title-${event.id}`}>Title</label>
+        <input
+          id={`edit-title-${event.id}`}
+          value={draft.title}
+          onChange={(e) => updateDraft({ title: e.target.value })}
+          required
+        />
+      </div>
+      <div>
+        <label htmlFor={`edit-description-${event.id}`}>Description</label>
+        <textarea
+          id={`edit-description-${event.id}`}
+          value={draft.description ?? ''}
+          onChange={(e) => updateDraft({ description: e.target.value || null })}
+          rows={2}
+        />
+      </div>
+      <div>
+        <label htmlFor={`edit-duration-${event.id}`}>Duration (minutes)</label>
+        <input
+          id={`edit-duration-${event.id}`}
+          type="number"
+          min={15}
+          step={15}
+          value={draft.duration_minutes}
+          onChange={(e) =>
+            updateDraft({ duration_minutes: Number(e.target.value) })
+          }
+          required
+        />
+      </div>
+      <div className="form-actions">
+        <button type="submit" className="btn-primary" disabled={saving || !draft.title.trim()}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={saving}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -603,10 +718,9 @@ function EventActions({
   showMoveToBottom = false,
   moveToBottomDisabled = false,
   onMoveToBottom,
-  showGroceryView = false,
-  viewDisabled = false,
-  isViewing = false,
-  onViewToggle,
+  eventEditMode,
+  editDisabled = false,
+  onEditToggle,
 }: {
   event: SmartEvent;
   onDelete: (id: string) => void;
@@ -614,10 +728,9 @@ function EventActions({
   showMoveToBottom?: boolean;
   moveToBottomDisabled?: boolean;
   onMoveToBottom?: () => void;
-  showGroceryView?: boolean;
-  viewDisabled?: boolean;
-  isViewing?: boolean;
-  onViewToggle?: () => void;
+  eventEditMode?: 'grocery' | 'standard';
+  editDisabled?: boolean;
+  onEditToggle?: () => void;
 }) {
   const labels: Record<SmartEvent['status'], string> = {
     pending: 'Pending',
@@ -631,15 +744,26 @@ function EventActions({
       <span className={`badge badge-${event.status}`}>{labels[event.status]}</span>
       {event.status !== 'completed' && (
         <>
-          {showGroceryView && (
+          {eventEditMode === 'grocery' && (
             <button
               type="button"
               className="btn-secondary"
               style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
-              disabled={viewDisabled}
-              onClick={onViewToggle}
+              disabled={editDisabled}
+              onClick={onEditToggle}
             >
-              {isViewing ? 'Hide' : 'View'}
+              View
+            </button>
+          )}
+          {eventEditMode === 'standard' && (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+              disabled={editDisabled}
+              onClick={onEditToggle}
+            >
+              Edit
             </button>
           )}
           {showMoveToBottom && (
@@ -662,15 +786,26 @@ function EventActions({
           </button>
         </>
       )}
-      {event.status === 'completed' && showGroceryView && (
+      {event.status === 'completed' && eventEditMode === 'grocery' && (
         <button
           type="button"
           className="btn-secondary"
           style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
-          disabled={viewDisabled}
-          onClick={onViewToggle}
+          disabled={editDisabled}
+          onClick={onEditToggle}
         >
-          {isViewing ? 'Hide' : 'View'}
+          View
+        </button>
+      )}
+      {event.status === 'completed' && eventEditMode === 'standard' && (
+        <button
+          type="button"
+          className="btn-secondary"
+          style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+          disabled={editDisabled}
+          onClick={onEditToggle}
+        >
+          Edit
         </button>
       )}
       <button className="btn-danger" onClick={() => onDelete(event.id)}>

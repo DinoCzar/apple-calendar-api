@@ -110,6 +110,12 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
 
   const isRecurringWorkspace = workspace === 'recurring';
   const isGroceryWorkspace = workspace === 'grocery';
+  const isStandardEditableWorkspace =
+    workspace === 'smart' ||
+    workspace === 'work' ||
+    workspace === 'home' ||
+    workspace === 'project' ||
+    workspace === 'other';
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -188,6 +194,17 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
       grocery_sides: string | null;
       grocery_recipe: string | null;
       grocery_ingredients: string | null;
+    }
+  ) {
+    return workspaceApi.updateSmartEvent(id, data);
+  }
+
+  async function handleUpdateStandardEvent(
+    id: string,
+    data: {
+      title: string;
+      description: string | null;
+      duration_minutes: number;
     }
   ) {
     return workspaceApi.updateSmartEvent(id, data);
@@ -530,8 +547,18 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                 onComplete={handleComplete}
                 onReorder={(ids) => workspaceApi.reorderSmartEvents(ids)}
                 showMoveToBottom={workspace === 'grocery'}
+                eventEditMode={
+                  isGroceryWorkspace
+                    ? 'grocery'
+                    : isStandardEditableWorkspace
+                      ? 'standard'
+                      : undefined
+                }
                 onUpdateGroceryEvent={
                   isGroceryWorkspace ? handleUpdateGroceryEvent : undefined
+                }
+                onUpdateStandardEvent={
+                  isStandardEditableWorkspace ? handleUpdateStandardEvent : undefined
                 }
               />
             )}
