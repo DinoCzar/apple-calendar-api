@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, createWorkspaceApi } from './api';
 import PriorityQueue from './PriorityQueue';
-import type { AppSettings, RecallResult, SmartEvent, SyncResult } from './types';
+import type { AppSettings, SmartEvent, SyncResult } from './types';
 import { toPersistedSettings } from './types';
 import { getWorkspaceConfig, type WorkspaceId } from './workspaces';
 
@@ -30,10 +30,8 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [recalling, setRecalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
-  const [recallResult, setRecallResult] = useState<RecallResult | null>(null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -133,7 +131,6 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
     setSyncing(true);
     setError(null);
     setSyncResult(null);
-    setRecallResult(null);
     try {
       const result = await workspaceApi.runSync(true);
       setSyncResult(result);
@@ -143,38 +140,6 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
       setError((err as Error).message);
     } finally {
       setSyncing(false);
-    }
-  }
-
-  async function handleRecallEvents() {
-    const calendarName = settings?.smart_calendar_name ?? config.defaultCalendarName;
-    const onCalendar = events.filter(
-      (e) => e.status === 'synced' || e.status === 'scheduled'
-    ).length;
-
-    if (
-      !confirm(
-        `Remove events from your ${calendarName} calendar` +
-          (onCalendar > 0
-            ? ` and return ${onCalendar} to pending?`
-            : '?')
-      )
-    ) {
-      return;
-    }
-
-    setRecalling(true);
-    setError(null);
-    setSyncResult(null);
-    setRecallResult(null);
-    try {
-      const result = await workspaceApi.runRecall();
-      setRecallResult(result);
-      await load();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setRecalling(false);
     }
   }
 
@@ -220,18 +185,10 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
         </div>
         <div className="header-actions">
           <button
-            className="btn-secondary"
-            onClick={handleRecallEvents}
-            disabled={recalling || syncing || !settings?.icloud_configured}
-          >
-            {recalling ? 'Recalling…' : 'Recall Events'}
-          </button>
-          <button
             className="btn-primary"
             onClick={handleSync}
             disabled={
               syncing ||
-              recalling ||
               !settings?.icloud_configured ||
               syncableCount === 0
             }
@@ -242,29 +199,6 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
       </header>
 
       {error && <div className="alert alert-error">{error}</div>}
-
-      {recallResult && (
-        <div className="alert alert-success">
-          Removed <strong>{recallResult.calendarEventsRemoved}</strong> event
-          {recallResult.calendarEventsRemoved === 1 ? '' : 's'} from{' '}
-          <strong>{calendarName}</strong>
-          {recallResult.smartEventsRecalled > 0 && (
-            <>
-              {' '}
-              and returned <strong>{recallResult.smartEventsRecalled}</strong> to
-              pending
-            </>
-          )}
-          .
-          {recallResult.errors.length > 0 && (
-            <div className="sync-result" style={{ marginTop: '0.5rem' }}>
-              {recallResult.errors.map((e, i) => (
-                <div key={i}>{e}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {syncResult && (
         <div className="alert alert-success">
@@ -600,22 +534,10 @@ function BusyTimesPreview({
           ))}
         </div>
       )}
-      {configured && (
-        <div className="preview-footer">
-          {fetchedAt && !loading && (
-            <p className="preview-fetched-at">
-              Updated {formatDateTime(fetchedAt)}
-            </p>
-          )}
-          <button
-            className="btn-secondary"
-            style={{ width: '100%', fontSize: '0.85rem' }}
-            onClick={() => loadPreview(true)}
-            disabled={loading}
-          >
-            {loading ? 'Refreshing from iCloud…' : 'Refresh from iCloud'}
-          </button>
-        </div>
+      {configured && fetchedAt && !loading && (
+        <p className="preview-fetched-at">
+          Updated {formatDateTime(fetchedAt)}
+        </p>
       )}
     </div>
   );

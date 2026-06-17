@@ -2,7 +2,6 @@ import type {
   AppSettings,
   AppleEventPreview,
   PersistedAppSettings,
-  RecallResult,
   SmartEvent,
   SyncResult,
 } from './types';
@@ -96,11 +95,6 @@ export function createWorkspaceApi(workspace: WorkspaceId) {
       request<SyncResult>('/sync', {
         method: 'POST',
         body: JSON.stringify({ reschedule, workspace }),
-      }),
-    runRecall: () =>
-      request<RecallResult>('/sync/recall', {
-        method: 'POST',
-        body: JSON.stringify({ workspace }),
       }),
     previewBusyEvents: (refresh = false) => {
       const query = refresh ? `?refresh=1&t=${Date.now()}` : '';
