@@ -30,6 +30,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (res.status === 502) {
+      throw new Error(
+        body.error ||
+          'Server unavailable during sync (502). The app may still be deploying or restarting — wait a minute and try again.'
+      );
+    }
+    if (res.status === 504) {
+      throw new Error(
+        body.error ||
+          'Sync timed out. Try again, or reduce schedule-ahead days in Settings.'
+      );
+    }
     throw new Error(body.error || `Request failed: ${res.status}`);
   }
 

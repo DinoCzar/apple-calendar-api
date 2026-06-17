@@ -87,6 +87,10 @@ async function main() {
   });
 }
 
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+});
+
 main().catch((err) => {
   console.error('Failed to start server:', err);
   process.exit(1);

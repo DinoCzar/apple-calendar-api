@@ -38,6 +38,13 @@ function getClient(): Client {
 }
 
 function rowToSmartEvent(row: Record<string, unknown>): SmartEvent {
+  const uid =
+    row.apple_event_uid != null
+      ? String(row.apple_event_uid)
+      : row.calendar_uid != null
+        ? String(row.calendar_uid)
+        : null;
+
   return {
     id: String(row.id),
     title: String(row.title),
@@ -49,10 +56,53 @@ function rowToSmartEvent(row: Record<string, unknown>): SmartEvent {
       ? String(row.scheduled_start)
       : null,
     scheduled_end: row.scheduled_end ? String(row.scheduled_end) : null,
-    apple_event_uid: row.calendar_uid ? String(row.calendar_uid) : null,
+    apple_event_uid: uid,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
+}
+
+async function migrateSmartEventsSchema(db: Client): Promise<void> {
+  const info = await db.execute('PRAGMA table_info(smart_events)');
+  const columns = new Set(info.rows.map((row) => String(row.name)));
+
+  if (!columns.has('workspace')) {
+    try {
+      await db.execute(
+        `ALTER TABLE smart_events ADD COLUMN workspace TEXT NOT NULL DEFAULT 'smart'`
+      );
+    } catch {
+      // Column already exists
+    }
+  }
+
+  const hasAppleUid = columns.has('apple_event_uid');
+  const hasCalendarUid = columns.has('calendar_uid');
+
+  if (!hasAppleUid && !hasCalendarUid) {
+    try {
+      await db.execute(
+        `ALTER TABLE smart_events ADD COLUMN apple_event_uid TEXT`
+      );
+    } catch {
+      // Column already exists
+    }
+  } else if (!hasAppleUid && hasCalendarUid) {
+    try {
+      await db.execute(
+        `ALTER TABLE smart_events ADD COLUMN apple_event_uid TEXT`
+      );
+    } catch {
+      // Column already exists
+    }
+    try {
+      await db.execute(
+        `UPDATE smart_events SET apple_event_uid = calendar_uid WHERE calendar_uid IS NOT NULL`
+      );
+    } catch {
+      // Best-effort copy from legacy column name
+    }
+  }
 }
 
 function workspaceDefaults(workspace: WorkspaceId): AppSettings {
@@ -109,19 +159,13 @@ export async function initDb(): Promise<void> {
       status TEXT NOT NULL DEFAULT 'pending',
       scheduled_start TEXT,
       scheduled_end TEXT,
-      calendar_uid TEXT,
+      apple_event_uid TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
 
-  try {
-    await db.execute(
-      `ALTER TABLE smart_events ADD COLUMN workspace TEXT NOT NULL DEFAULT 'smart'`
-    );
-  } catch {
-    // Column already exists
-  }
+  await migrateSmartEventsSchema(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -214,7 +258,7 @@ type SmartEventUpdate = Partial<
     | 'scheduled_end'
   >
 > & {
-  calendar_uid?: string | null;
+  apple_event_uid?: string | null;
 };
 
 export async function updateSmartEvent(
@@ -311,7 +355,7 @@ export async function resetScheduledSmartEvents(
           SET status = 'pending',
               scheduled_start = NULL,
               scheduled_end = NULL,
-              calendar_uid = NULL,
+              apple_event_uid = NULL,
               updated_at = datetime('now')
           WHERE workspace = ? AND status IN ('scheduled', 'synced')`,
     args: [workspace],
@@ -330,7 +374,7 @@ export async function markSmartEventScheduled(
     status: 'scheduled',
     scheduled_start: start,
     scheduled_end: end,
-    calendar_uid: calendarUid,
+    apple_event_uid: calendarUid,
   });
 }
 
