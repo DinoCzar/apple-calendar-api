@@ -414,6 +414,7 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                 onDelete={handleDelete}
                 onComplete={handleComplete}
                 onReorder={(ids) => workspaceApi.reorderSmartEvents(ids)}
+                showMoveToBottom={workspace === 'grocery'}
               />
             )}
           </div>
