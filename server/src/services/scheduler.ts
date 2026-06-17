@@ -9,6 +9,7 @@ import {
   getScheduleEarliestInstant,
   getScheduleRangeStart,
 } from './caldav';
+import { isSchedulableDay } from './schedule-days';
 
 function partsInTimezone(date: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -264,6 +265,8 @@ export function scheduleSmartEvents(
 
     for (let d = 0; d < settings.schedule_days_ahead; d++) {
       const day = addDaysInTimezone(rangeStart, d, settings.timezone);
+      if (!isSchedulableDay(day, settings)) continue;
+
       const dayKey = formatDateInTimezone(day, settings.timezone);
       const dayBusy = [...(busyByDay.get(dayKey) || []), ...placedSlots];
       const freeSlots = findFreeSlotsForDay(day, settings, dayBusy);

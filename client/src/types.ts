@@ -22,6 +22,7 @@ export interface AppSettings {
   timezone: string;
   schedule_start_use_default: boolean;
   schedule_start_date: string | null;
+  schedule_days_of_week: number[];
   icloud_configured?: boolean;
 }
 
@@ -40,6 +41,7 @@ export function toPersistedSettings(
     timezone,
     schedule_start_use_default,
     schedule_start_date,
+    schedule_days_of_week,
   } = settings;
 
   return {
@@ -54,6 +56,9 @@ export function toPersistedSettings(
       ? { schedule_start_use_default }
       : {}),
     ...(schedule_start_date !== undefined ? { schedule_start_date } : {}),
+    ...(schedule_days_of_week !== undefined
+      ? { schedule_days_of_week }
+      : {}),
   };
 }
 

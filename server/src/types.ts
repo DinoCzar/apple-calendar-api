@@ -39,6 +39,7 @@ export interface AppSettings {
   timezone: string;
   schedule_start_use_default: boolean;
   schedule_start_date: string | null;
+  schedule_days_of_week: number[];
 }
 
 export interface CalendarEvent {
