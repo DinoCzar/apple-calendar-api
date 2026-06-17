@@ -4,6 +4,7 @@ export const WORKSPACE_IDS = [
   'home',
   'project',
   'other',
+  'recurring',
 ] as const;
 export type WorkspaceId = (typeof WORKSPACE_IDS)[number];
 
@@ -68,6 +69,16 @@ export const WORKSPACES: WorkspaceConfig[] = [
     addButtonLabel: 'Add Other Event',
     syncButtonLabel: 'Sync Other Events',
     defaultCalendarName: 'Other Events',
+  },
+  {
+    id: 'recurring',
+    label: 'Recurring Events',
+    eventLabel: 'Recurring Event',
+    eventsHeading: 'Your Recurring Events',
+    newEventHeading: 'New Recurring Event',
+    addButtonLabel: 'Add Recurring Event',
+    syncButtonLabel: 'Sync Recurring Events',
+    defaultCalendarName: 'Recurring Events',
   },
 ];
 
