@@ -1,8 +1,9 @@
 import { RRule, RRuleSet } from 'rrule';
-import { createDAVClient, DAVCalendar, DAVNamespaceShort } from 'tsdav';
+import { createDAVClient, DAVCalendar } from 'tsdav';
 import { v4 as uuidv4 } from 'uuid';
 import { config, isICloudConfigured } from '../config';
 import type { AppSettings, CalendarEvent } from '../types';
+import { mapWithConcurrency } from '../utils/async';
 
 interface ParsedVEvent {
   uid: string;
@@ -21,6 +22,15 @@ interface ParsedVEvent {
 type CaldavClient = Awaited<ReturnType<typeof createDAVClient>>;
 
 let clientPromise: Promise<CaldavClient> | null = null;
+
+interface BusyEventsCache {
+  key: string;
+  fetchedAt: number;
+  events: CalendarEvent[];
+}
+
+let busyEventsCache: BusyEventsCache | null = null;
+const BUSY_EVENTS_CACHE_MS = 90_000;
 
 export function resetCaldavClient(): void {
   clientPromise = null;
@@ -710,15 +720,32 @@ export async function fetchAllBusyEvents(
   rangeEnd: Date,
   options: { refresh?: boolean; excludeCalendarNames?: string[] } = {}
 ): Promise<CalendarEvent[]> {
+  const excludeNames = new Set(
+    options.excludeCalendarNames ?? [settings.smart_calendar_name]
+  );
+  const cacheKey = [
+    rangeStart.toISOString(),
+    rangeEnd.toISOString(),
+    [...excludeNames].sort().join('|'),
+  ].join('::');
+
+  if (
+    busyEventsCache &&
+    busyEventsCache.key === cacheKey &&
+    Date.now() - busyEventsCache.fetchedAt < BUSY_EVENTS_CACHE_MS
+  ) {
+    return filterEventsToSchedulingWindow(
+      removeStaleUidVersions([...busyEventsCache.events]),
+      settings
+    );
+  }
+
   if (options.refresh) {
     resetCaldavClient();
   }
 
   const client = await getClient();
   const calendars = await client.fetchCalendars();
-  const excludeNames = new Set(
-    options.excludeCalendarNames ?? [settings.smart_calendar_name]
-  );
   const excludeUrls = new Set(
     calendars
       .filter((cal) => excludeNames.has(calendarDisplayName(cal) || ''))
@@ -734,63 +761,72 @@ export async function fetchAllBusyEvents(
     end: rangeEnd.toISOString(),
   };
 
-  for (const calendar of busyCalendars) {
-    const name = calendarDisplayName(calendar) || 'Unnamed';
+  const refresh = Boolean(options.refresh);
+  const perCalendarEvents = await mapWithConcurrency(
+    busyCalendars,
+    4,
+    async (calendar) => {
+      const name = calendarDisplayName(calendar) || 'Unnamed';
 
-    try {
-      const { objects, serverExpanded } = await fetchBusyCalendarObjects(
-        client,
-        calendar,
-        timeRange,
-        Boolean(options.refresh)
-      );
+      try {
+        const { objects, serverExpanded } = await fetchBusyCalendarObjects(
+          client,
+          calendar,
+          timeRange,
+          refresh
+        );
 
-      for (const obj of objects) {
-        if (!obj.data) continue;
+        const parsedEvents: CalendarEvent[] = [];
+        for (const obj of objects) {
+          if (!obj.data) continue;
 
-        for (const parsed of parseIcsEvents(
-          obj.data,
-          settings.timezone,
-          rangeStart,
-          rangeEnd,
-          { serverExpanded }
-        )) {
-          const key = eventInstanceKey(parsed);
-          const existing = eventMap.get(key);
-          if (existing) {
-            const existingTime = existing.lastModified?.getTime() ?? 0;
-            const parsedTime = parsed.lastModified?.getTime() ?? 0;
-            if (parsedTime > existingTime) {
-              eventMap.set(key, parsed);
-            }
-            continue;
+          for (const parsed of parseIcsEvents(
+            obj.data,
+            settings.timezone,
+            rangeStart,
+            rangeEnd,
+            { serverExpanded }
+          )) {
+            parsedEvents.push(parsed);
           }
+        }
 
+        return parsedEvents;
+      } catch (err) {
+        console.warn(`Skipped calendar "${name}": ${(err as Error).message}`);
+        return [];
+      }
+    }
+  );
+
+  for (const parsedEvents of perCalendarEvents) {
+    for (const parsed of parsedEvents) {
+      const key = eventInstanceKey(parsed);
+      const existing = eventMap.get(key);
+      if (existing) {
+        const existingTime = existing.lastModified?.getTime() ?? 0;
+        const parsedTime = parsed.lastModified?.getTime() ?? 0;
+        if (parsedTime > existingTime) {
           eventMap.set(key, parsed);
         }
+        continue;
       }
-    } catch (err) {
-      console.warn(`Skipped calendar "${name}": ${(err as Error).message}`);
+
+      eventMap.set(key, parsed);
     }
   }
 
   const events = [...eventMap.values()];
-  return filterEventsToSchedulingWindow(
+  const filtered = filterEventsToSchedulingWindow(
     removeStaleUidVersions(events),
     settings
   );
-}
-
-function calendarHomeUrl(calendar: DAVCalendar): string {
-  const url = calendar.url.endsWith('/') ? calendar.url : `${calendar.url}/`;
-  const parts = url.split('/');
-  parts.pop();
-  return `${parts.join('/')}/`;
-}
-
-function isMkCalendarSuccess(status: number | string | undefined): boolean {
-  const code = typeof status === 'string' ? parseInt(status, 10) : status;
-  return code !== undefined && code >= 200 && code < 300;
+  busyEventsCache = {
+    key: cacheKey,
+    fetchedAt: Date.now(),
+    events: [...eventMap.values()],
+  };
+  return filtered;
 }
 
 async function getSmartCalendar(
@@ -799,6 +835,19 @@ async function getSmartCalendar(
 ): Promise<DAVCalendar | null> {
   const calendars = await client.fetchCalendars();
   return findCalendarByName(calendars, settings.smart_calendar_name) ?? null;
+}
+
+async function requireSmartCalendar(
+  client: CaldavClient,
+  settings: AppSettings
+): Promise<DAVCalendar> {
+  const calendar = await getSmartCalendar(client, settings);
+  if (calendar) return calendar;
+
+  throw new Error(
+    `Calendar "${settings.smart_calendar_name}" was not found on iCloud. ` +
+      `Create it in Apple Calendar, wait a minute, refresh calendars in Settings, then sync again.`
+  );
 }
 
 export async function clearSmartEventsCalendar(
@@ -822,76 +871,6 @@ export async function clearSmartEventsCalendar(
   return deleted;
 }
 
-async function getOrCreateSmartCalendar(
-  client: CaldavClient,
-  settings: AppSettings
-): Promise<DAVCalendar> {
-  const existing = await getSmartCalendar(client, settings);
-  if (existing) return existing;
-
-  const calendars = await client.fetchCalendars();
-  const reference = calendars[0];
-
-  if (!reference) {
-    throw new Error('No calendars found on iCloud account');
-  }
-
-  const calendarId = uuidv4().toUpperCase();
-  const homeUrl = calendarHomeUrl(reference);
-  const newUrl = `${homeUrl}${calendarId}/`;
-
-  let createResponses;
-  try {
-    createResponses = await client.makeCalendar({
-      url: newUrl,
-      props: {
-        [`${DAVNamespaceShort.DAV}:displayname`]: settings.smart_calendar_name,
-        [`${DAVNamespaceShort.CALDAV_APPLE}:calendar-color`]: '#5B8DEFFF',
-        [`${DAVNamespaceShort.CALDAV}:supported-calendar-component-set`]: {
-          [`${DAVNamespaceShort.CALDAV}:comp`]: [
-            { _attributes: { name: 'VEVENT' } },
-          ],
-        },
-      },
-    });
-  } catch (err) {
-    throw new Error(
-      `Could not create "${settings.smart_calendar_name}" calendar on iCloud. ` +
-        `Open Apple Calendar on your Mac or iPhone, create a new calendar named ` +
-        `"${settings.smart_calendar_name}", wait a minute, then sync again. ` +
-        `(${(err as Error).message})`
-    );
-  }
-
-  const createdOk =
-    createResponses?.some((r) => isMkCalendarSuccess(r.status)) ?? false;
-
-  const refreshed = await client.fetchCalendars();
-  const created =
-    findCalendarByName(refreshed, settings.smart_calendar_name) ??
-    refreshed.find(
-      (cal) =>
-        cal.url === newUrl ||
-        cal.url === newUrl.replace(/\/$/, '') ||
-        cal.url.replace(/\/$/, '') === newUrl.replace(/\/$/, '')
-    );
-
-  if (created) return created;
-
-  if (createdOk) {
-    return {
-      url: newUrl,
-      displayName: settings.smart_calendar_name,
-    };
-  }
-
-  throw new Error(
-    `Could not create "${settings.smart_calendar_name}" calendar on iCloud. ` +
-      `Open Apple Calendar on your Mac or iPhone, create a new calendar named ` +
-      `"${settings.smart_calendar_name}", wait a minute, then sync again.`
-  );
-}
-
 export async function pushSmartEventToCalendar(params: {
   settings: AppSettings;
   uid: string;
@@ -901,7 +880,7 @@ export async function pushSmartEventToCalendar(params: {
   end: Date;
 }): Promise<string> {
   const client = await getClient();
-  const smartCalendar = await getOrCreateSmartCalendar(client, params.settings);
+  const smartCalendar = await requireSmartCalendar(client, params.settings);
   const icsData = buildIcsEvent({
     uid: params.uid,
     title: params.title,

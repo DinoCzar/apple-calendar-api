@@ -80,16 +80,28 @@ async function migrateSmartEventsSchema(db: Client): Promise<void> {
   const hasCalendarUid = columns.has('calendar_uid');
 
   if (!hasAppleUid && !hasCalendarUid) {
-    await db.execute(
-      `ALTER TABLE smart_events ADD COLUMN apple_event_uid TEXT`
-    );
+    try {
+      await db.execute(
+        `ALTER TABLE smart_events ADD COLUMN apple_event_uid TEXT`
+      );
+    } catch {
+      // Column already exists
+    }
   } else if (!hasAppleUid && hasCalendarUid) {
-    await db.execute(
-      `ALTER TABLE smart_events ADD COLUMN apple_event_uid TEXT`
-    );
-    await db.execute(
-      `UPDATE smart_events SET apple_event_uid = calendar_uid WHERE calendar_uid IS NOT NULL`
-    );
+    try {
+      await db.execute(
+        `ALTER TABLE smart_events ADD COLUMN apple_event_uid TEXT`
+      );
+    } catch {
+      // Column already exists
+    }
+    try {
+      await db.execute(
+        `UPDATE smart_events SET apple_event_uid = calendar_uid WHERE calendar_uid IS NOT NULL`
+      );
+    } catch {
+      // Best-effort copy from legacy column name
+    }
   }
 }
 

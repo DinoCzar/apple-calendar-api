@@ -128,8 +128,6 @@ export async function runFullSync(
     if (recallResult.errors.length > 0) {
       return result;
     }
-
-    await resetScheduledSmartEvents(workspace);
   }
 
   const pending = await getPendingSmartEvents(workspace);

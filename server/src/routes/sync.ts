@@ -3,9 +3,11 @@ import { getSettings } from '../db';
 import { fetchAllBusyEvents, getScheduleFetchRange, getSchedulingWindow } from '../services/caldav';
 import { runFullSync, runRecall } from '../services/sync';
 import { isICloudConfigured } from '../config';
+import { withTimeout } from '../utils/async';
 import { WORKSPACE_IDS, workspaceFromRequest } from '../workspace';
 
 const router = Router();
+const SYNC_TIMEOUT_MS = 120_000;
 
 async function outputCalendarNames(): Promise<string[]> {
   const names = new Set<string>();
@@ -27,10 +29,16 @@ router.post('/', async (req, res) => {
 
     const workspace = workspaceFromRequest(req);
     const reschedule = req.body?.reschedule !== false;
-    const result = await runFullSync({ workspace, reschedule });
+    const result = await withTimeout(
+      runFullSync({ workspace, reschedule }),
+      SYNC_TIMEOUT_MS,
+      'Sync'
+    );
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    const message = (err as Error).message;
+    const status = message.includes('timed out') ? 504 : 500;
+    res.status(status).json({ error: message });
   }
 });
 
