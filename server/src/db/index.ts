@@ -322,6 +322,9 @@ type SmartEventUpdate = Partial<
     | 'status'
     | 'scheduled_start'
     | 'scheduled_end'
+    | 'grocery_sides'
+    | 'grocery_recipe'
+    | 'grocery_ingredients'
   >
 > & {
   apple_event_uid?: string | null;
