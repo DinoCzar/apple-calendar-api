@@ -37,6 +37,8 @@ export interface AppSettings {
   schedule_days_ahead: number;
   min_gap_minutes: number;
   timezone: string;
+  schedule_start_use_default: boolean;
+  schedule_start_date: string | null;
 }
 
 export interface CalendarEvent {

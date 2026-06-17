@@ -564,20 +564,56 @@ function parseTimeOnDate(date: Date, timeStr: string, timezone: string): Date {
   return makeDateInTimezone(year, month, day, hour, minute, timezone);
 }
 
+function parseScheduleStartDate(settings: AppSettings): Date | null {
+  if (settings.schedule_start_use_default) return null;
+  if (!settings.schedule_start_date?.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    return null;
+  }
+
+  const [year, month, day] = settings.schedule_start_date.split('-').map(Number);
+  return makeDateInTimezone(year, month, day, 0, 0, settings.timezone);
+}
+
+export function getScheduleRangeStart(
+  settings: AppSettings,
+  now = new Date()
+): Date {
+  const todayStart = startOfDayInTimezone(now, settings.timezone);
+  const chosenStart = parseScheduleStartDate(settings);
+  if (!chosenStart) return todayStart;
+  return chosenStart < todayStart ? todayStart : chosenStart;
+}
+
+export function getScheduleEarliestInstant(
+  settings: AppSettings,
+  day: Date,
+  now = new Date()
+): Date {
+  const dayWorkStart = parseTimeOnDate(
+    day,
+    settings.working_hours_start,
+    settings.timezone
+  );
+
+  if (
+    formatDateInTimezone(day, settings.timezone) ===
+    formatDateInTimezone(now, settings.timezone)
+  ) {
+    return new Date(Math.max(now.getTime(), dayWorkStart.getTime()));
+  }
+
+  return dayWorkStart;
+}
+
 export function getSchedulingWindow(settings: AppSettings): {
   start: Date;
   end: Date;
 } {
   const now = new Date();
-  const rangeStart = startOfDayInTimezone(now, settings.timezone);
+  const rangeStart = getScheduleRangeStart(settings, now);
   const lastDay = addDaysInTimezone(
     rangeStart,
     Math.max(settings.schedule_days_ahead - 1, 0),
-    settings.timezone
-  );
-  const windowStart = parseTimeOnDate(
-    rangeStart,
-    settings.working_hours_start,
     settings.timezone
   );
   const windowEnd = parseTimeOnDate(
@@ -587,7 +623,7 @@ export function getSchedulingWindow(settings: AppSettings): {
   );
 
   return {
-    start: windowStart > now ? windowStart : now,
+    start: getScheduleEarliestInstant(settings, rangeStart, now),
     end: windowEnd,
   };
 }
@@ -597,7 +633,7 @@ export function filterEventsToSchedulingWindow(
   settings: AppSettings,
   now = new Date()
 ): CalendarEvent[] {
-  const rangeStart = startOfDayInTimezone(now, settings.timezone);
+  const rangeStart = getScheduleRangeStart(settings, now);
   const lastSchedulableDay = addDaysInTimezone(
     rangeStart,
     Math.max(settings.schedule_days_ahead - 1, 0),
@@ -637,7 +673,7 @@ export function filterEventsToSchedulingWindow(
         settings.working_hours_end,
         settings.timezone
       );
-      const effectiveStart = dayWorkStart > now ? dayWorkStart : now;
+      const effectiveStart = getScheduleEarliestInstant(settings, day, now);
       const overlapStart = new Date(
         Math.max(event.start.getTime(), effectiveStart.getTime())
       );
@@ -664,8 +700,7 @@ export function getScheduleFetchRange(settings: AppSettings): {
   start: Date;
   end: Date;
 } {
-  const now = new Date();
-  const start = startOfDayInTimezone(now, settings.timezone);
+  const start = getScheduleRangeStart(settings);
   const end = addDaysInTimezone(start, settings.schedule_days_ahead, settings.timezone);
   return { start, end };
 }

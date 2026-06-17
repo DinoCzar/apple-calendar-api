@@ -18,6 +18,8 @@ const DEFAULT_SETTINGS: Omit<AppSettings, 'smart_calendar_name'> & {
   schedule_days_ahead: 7,
   min_gap_minutes: 15,
   timezone: 'America/Los_Angeles',
+  schedule_start_use_default: true,
+  schedule_start_date: null,
 };
 
 function getClient(): Client {
@@ -417,6 +419,14 @@ export async function getSettings(
     timezone: settings.timezone ?? defaults.timezone,
     smart_calendar_name:
       settings.smart_calendar_name ?? defaults.smart_calendar_name,
+    schedule_start_use_default:
+      settings.schedule_start_use_default !== undefined
+        ? settings.schedule_start_use_default !== 'false'
+        : defaults.schedule_start_use_default,
+    schedule_start_date:
+      settings.schedule_start_date && settings.schedule_start_date.length > 0
+        ? settings.schedule_start_date
+        : defaults.schedule_start_date,
   };
 }
 

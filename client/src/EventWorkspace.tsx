@@ -15,6 +15,14 @@ function formatDateTime(iso: string): string {
   });
 }
 
+function todayDateInputValue(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 interface EventWorkspaceProps {
   workspace: WorkspaceId;
 }
@@ -145,11 +153,25 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
 
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
+    if (
+      settingsDraft.schedule_start_use_default === false &&
+      !settingsDraft.schedule_start_date
+    ) {
+      setError('Choose a start date or enable “Start at next available time slot”.');
+      return;
+    }
+
     setSavingSettings(true);
     setError(null);
     try {
       const updated = await workspaceApi.updateSettings(
-        toPersistedSettings(settingsDraft)
+        toPersistedSettings({
+          ...settingsDraft,
+          schedule_start_date:
+            settingsDraft.schedule_start_use_default === false
+              ? settingsDraft.schedule_start_date ?? null
+              : null,
+        })
       );
       setSettings(updated);
       setSettingsDraft(updated);
@@ -365,6 +387,45 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                   {loadingCalendars ? 'Loading…' : 'Refresh calendars'}
                 </button>
               </div>
+              <div style={{ marginTop: '0.75rem' }}>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={settingsDraft.schedule_start_use_default !== false}
+                    onChange={(e) =>
+                      setSettingsDraft((s) => ({
+                        ...s,
+                        schedule_start_use_default: e.target.checked,
+                        schedule_start_date: e.target.checked
+                          ? null
+                          : s.schedule_start_date ?? todayDateInputValue(),
+                      }))
+                    }
+                  />
+                  Start at next available time slot (default)
+                </label>
+                <p className="settings-hint">
+                  When checked, events fill the next open slot within your work hours.
+                  Uncheck to pick a specific start date.
+                </p>
+              </div>
+              {settingsDraft.schedule_start_use_default === false && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <label>Start scheduling on</label>
+                  <input
+                    type="date"
+                    min={todayDateInputValue()}
+                    value={settingsDraft.schedule_start_date ?? ''}
+                    onChange={(e) =>
+                      setSettingsDraft((s) => ({
+                        ...s,
+                        schedule_start_date: e.target.value || null,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+              )}
               <div className="form-row" style={{ marginTop: '0.75rem' }}>
                 <div>
                   <label>Schedule from</label>

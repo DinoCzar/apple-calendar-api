@@ -20,6 +20,8 @@ export interface AppSettings {
   schedule_days_ahead: number;
   min_gap_minutes: number;
   timezone: string;
+  schedule_start_use_default: boolean;
+  schedule_start_date: string | null;
   icloud_configured?: boolean;
 }
 
@@ -36,6 +38,8 @@ export function toPersistedSettings(
     schedule_days_ahead,
     min_gap_minutes,
     timezone,
+    schedule_start_use_default,
+    schedule_start_date,
   } = settings;
 
   return {
@@ -46,6 +50,10 @@ export function toPersistedSettings(
     ...(schedule_days_ahead !== undefined ? { schedule_days_ahead } : {}),
     ...(min_gap_minutes !== undefined ? { min_gap_minutes } : {}),
     ...(timezone !== undefined ? { timezone } : {}),
+    ...(schedule_start_use_default !== undefined
+      ? { schedule_start_use_default }
+      : {}),
+    ...(schedule_start_date !== undefined ? { schedule_start_date } : {}),
   };
 }
 
