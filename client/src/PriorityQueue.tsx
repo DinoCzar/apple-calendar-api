@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { getGroceryTraits } from './grocery';
 import type { SmartEvent } from './types';
 import { formatRepeatDaysLabel } from './weekdays';
 
@@ -57,6 +58,7 @@ interface PriorityQueueProps {
   onComplete: (id: string) => void;
   onReorder: (ids: string[]) => Promise<SmartEvent[]>;
   showMoveToBottom?: boolean;
+  showGroceryTraits?: boolean;
 }
 
 export default function PriorityQueue({
@@ -67,6 +69,7 @@ export default function PriorityQueue({
   onComplete,
   onReorder,
   showMoveToBottom = false,
+  showGroceryTraits = false,
 }: PriorityQueueProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -322,7 +325,7 @@ export default function PriorityQueue({
                       <circle cx="8" cy="14" r="1.5" />
                     </svg>
                   </div>
-                  <EventBody event={event} />
+                  <EventBody event={event} showGroceryTraits={showGroceryTraits} />
                   <EventActions
                     event={event}
                     onDelete={onDelete}
@@ -378,7 +381,7 @@ export default function PriorityQueue({
         <div className={`event-list ${reorderable.length > 0 ? 'scheduled-list' : ''}`}>
           {completed.map((event) => (
             <div key={event.id} className="event-item">
-              <EventBody event={event} />
+              <EventBody event={event} showGroceryTraits={showGroceryTraits} />
               <EventActions
                 event={event}
                 onDelete={onDelete}
@@ -392,12 +395,30 @@ export default function PriorityQueue({
   );
 }
 
-function EventBody({ event }: { event: SmartEvent }) {
+function EventBody({
+  event,
+  showGroceryTraits = false,
+}: {
+  event: SmartEvent;
+  showGroceryTraits?: boolean;
+}) {
+  const groceryTraits = showGroceryTraits ? getGroceryTraits(event) : [];
+
   return (
     <div className="event-item-main">
       <h3>{event.title}</h3>
-      {event.description && (
+      {!showGroceryTraits && event.description && (
         <p className="event-description">{event.description}</p>
+      )}
+      {groceryTraits.length > 0 && (
+        <div className="event-traits">
+          {groceryTraits.map((trait) => (
+            <div key={trait.label} className="event-trait">
+              <span className="event-trait-label">{trait.label}</span>
+              <span className="event-trait-value">{trait.value}</span>
+            </div>
+          ))}
+        </div>
       )}
       <div className="event-meta">
         <span>{event.duration_minutes} min</span>
