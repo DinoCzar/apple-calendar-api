@@ -226,6 +226,54 @@ function applyClockTime(fromDay: Date, reference: Date, timezone: string): Date 
   return makeDateInTimezone(year, month, day, hour, minute, timezone);
 }
 
+function getRecurringEarliestOnDay(
+  day: Date,
+  now: Date,
+  timezone: string
+): Date {
+  if (formatDateInTimezone(day, timezone) === formatDateInTimezone(now, timezone)) {
+    return now;
+  }
+  return startOfDayInTimezone(day, timezone);
+}
+
+function findFreeSlotsForFullDay(
+  day: Date,
+  timezone: string,
+  busySlots: TimeSlot[],
+  gapMs: number
+): TimeSlot[] {
+  const dayStart = startOfDayInTimezone(day, timezone);
+  const dayEnd = addDaysInTimezone(day, 1, timezone);
+
+  if (dayEnd <= dayStart) return [];
+
+  const mergedBusy = mergeBusySlots(
+    busySlots.filter((s) => s.end > dayStart && s.start < dayEnd),
+    gapMs
+  );
+
+  const free: TimeSlot[] = [];
+  let cursor = dayStart;
+
+  for (const busy of mergedBusy) {
+    const busyStart = new Date(Math.max(busy.start.getTime(), dayStart.getTime()));
+    const busyEnd = new Date(Math.min(busy.end.getTime(), dayEnd.getTime()));
+
+    if (busyStart > cursor) {
+      free.push({ start: new Date(cursor), end: busyStart });
+    }
+
+    cursor = new Date(Math.max(cursor.getTime(), busyEnd.getTime() + gapMs));
+  }
+
+  if (cursor < dayEnd) {
+    free.push({ start: cursor, end: dayEnd });
+  }
+
+  return free;
+}
+
 function recurringPatternIsFree(
   anchorStart: Date,
   durationMs: number,
@@ -245,21 +293,6 @@ function recurringPatternIsFree(
     if (repeatDays.includes(weekday)) {
       const start = applyClockTime(day, anchorStart, timezone);
       const end = new Date(start.getTime() + durationMs);
-      const dayWorkStart = parseTimeOnDate(
-        day,
-        settings.working_hours_start,
-        timezone
-      );
-      const dayWorkEnd = parseTimeOnDate(
-        day,
-        settings.working_hours_end,
-        timezone
-      );
-
-      if (start < dayWorkStart || end > dayWorkEnd) {
-        return false;
-      }
-
       const candidate = { start, end };
       if (!canPlaceWithoutOverlap(candidate, [...allBusy, ...placedSlots], gapMs)) {
         return false;
@@ -293,16 +326,13 @@ function tryPlaceRecurringEventAtFixedTime(
 
   for (let d = 0; d < settings.schedule_days_ahead; d++) {
     const day = addDaysInTimezone(rangeStart, d, timezone);
-    if (!isSchedulableDay(day, settings)) continue;
     if (!repeatDays.includes(getWeekdayInTimezone(day, timezone))) continue;
 
     const start = parseTimeOnDate(day, repeatTime, timezone);
-    const earliest = getScheduleEarliestInstant(settings, day, now);
+    const earliest = getRecurringEarliestOnDay(day, now, timezone);
     if (start < earliest) continue;
 
     const end = new Date(start.getTime() + durationMs);
-    const dayWorkEnd = parseTimeOnDate(day, settings.working_hours_end, timezone);
-    if (end > dayWorkEnd) continue;
 
     if (
       recurringPatternIsFree(
@@ -355,15 +385,19 @@ function tryPlaceRecurringEvent(
 
   for (let d = 0; d < settings.schedule_days_ahead; d++) {
     const day = addDaysInTimezone(rangeStart, d, settings.timezone);
-    if (!isSchedulableDay(day, settings)) continue;
     if (!repeatDays.includes(getWeekdayInTimezone(day, settings.timezone))) {
       continue;
     }
 
     const dayKey = formatDateInTimezone(day, settings.timezone);
     const dayBusy = [...(busyByDay.get(dayKey) || []), ...placedSlots];
-    const freeSlots = findFreeSlotsForDay(day, settings, dayBusy);
-    const earliest = getScheduleEarliestInstant(settings, day, now);
+    const freeSlots = findFreeSlotsForFullDay(
+      day,
+      settings.timezone,
+      dayBusy,
+      gapMs
+    );
+    const earliest = getRecurringEarliestOnDay(day, now, settings.timezone);
 
     for (const free of freeSlots) {
       let slotCursor = new Date(Math.max(free.start.getTime(), earliest.getTime()));

@@ -478,127 +478,135 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                   {loadingCalendars ? 'Loading…' : 'Refresh calendars'}
                 </button>
               </div>
-              <div style={{ marginTop: '0.75rem' }}>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={settingsDraft.schedule_start_use_default !== false}
-                    onChange={(e) =>
-                      setSettingsDraft((s) => ({
-                        ...s,
-                        schedule_start_use_default: e.target.checked,
-                        schedule_start_date: e.target.checked
-                          ? null
-                          : s.schedule_start_date ?? todayDateInputValue(),
-                      }))
-                    }
-                  />
-                  Start at next available time slot (default)
-                </label>
-                <p className="settings-hint">
-                  When checked, events fill the next open slot within your work hours.
-                  Uncheck to pick a specific start date.
-                </p>
-              </div>
-              {settingsDraft.schedule_start_use_default === false && (
-                <div style={{ marginTop: '0.75rem' }}>
-                  <label>Start scheduling on</label>
-                  <input
-                    type="date"
-                    min={todayDateInputValue()}
-                    value={settingsDraft.schedule_start_date ?? ''}
-                    onChange={(e) =>
-                      setSettingsDraft((s) => ({
-                        ...s,
-                        schedule_start_date: e.target.value || null,
-                      }))
-                    }
-                    required
-                  />
-                </div>
+              {!isRecurringWorkspace && (
+                <>
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={settingsDraft.schedule_start_use_default !== false}
+                        onChange={(e) =>
+                          setSettingsDraft((s) => ({
+                            ...s,
+                            schedule_start_use_default: e.target.checked,
+                            schedule_start_date: e.target.checked
+                              ? null
+                              : s.schedule_start_date ?? todayDateInputValue(),
+                          }))
+                        }
+                      />
+                      Start at next available time slot (default)
+                    </label>
+                    <p className="settings-hint">
+                      When checked, events fill the next open slot within your work hours.
+                      Uncheck to pick a specific start date.
+                    </p>
+                  </div>
+                  {settingsDraft.schedule_start_use_default === false && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <label>Start scheduling on</label>
+                      <input
+                        type="date"
+                        min={todayDateInputValue()}
+                        value={settingsDraft.schedule_start_date ?? ''}
+                        onChange={(e) =>
+                          setSettingsDraft((s) => ({
+                            ...s,
+                            schedule_start_date: e.target.value || null,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                  )}
+                </>
               )}
-              <div className="form-row" style={{ marginTop: '0.75rem' }}>
-                <div>
-                  <label>Schedule from</label>
-                  <input
-                    type="time"
-                    value={settingsDraft.working_hours_start ?? '08:00'}
-                    onChange={(e) =>
-                      setSettingsDraft((s) => ({
-                        ...s,
-                        working_hours_start: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <label>Schedule until</label>
-                  <input
-                    type="time"
-                    value={settingsDraft.working_hours_end ?? '21:00'}
-                    onChange={(e) =>
-                      setSettingsDraft((s) => ({
-                        ...s,
-                        working_hours_end: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div style={{ marginTop: '0.75rem' }}>
-                <label>Schedule on these days</label>
-                <div className="weekday-picker" role="group" aria-label="Schedule days">
-                  {SCHEDULE_WEEKDAYS.map(({ value, label }) => {
-                    const active = selectedWeekdays.includes(value);
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        className={`weekday-toggle${active ? ' active' : ''}`}
-                        aria-pressed={active}
-                        onClick={() => toggleScheduleWeekday(value)}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="settings-hint">
-                  Events are only placed on selected days within your work hours.
-                </p>
-              </div>
-              <div className="form-row" style={{ marginTop: '0.75rem' }}>
-                <div>
-                  <label>Schedule ahead (days)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={30}
-                    value={settingsDraft.schedule_days_ahead ?? 7}
-                    onChange={(e) =>
-                      setSettingsDraft((s) => ({
-                        ...s,
-                        schedule_days_ahead: Number(e.target.value),
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <label>Gap between events (min)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={5}
-                    value={settingsDraft.min_gap_minutes ?? 15}
-                    onChange={(e) =>
-                      setSettingsDraft((s) => ({
-                        ...s,
-                        min_gap_minutes: Number(e.target.value),
-                      }))
-                    }
-                  />
-                </div>
-              </div>
+              {!isRecurringWorkspace && (
+                <>
+                  <div className="form-row" style={{ marginTop: '0.75rem' }}>
+                    <div>
+                      <label>Schedule from</label>
+                      <input
+                        type="time"
+                        value={settingsDraft.working_hours_start ?? '08:00'}
+                        onChange={(e) =>
+                          setSettingsDraft((s) => ({
+                            ...s,
+                            working_hours_start: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label>Schedule until</label>
+                      <input
+                        type="time"
+                        value={settingsDraft.working_hours_end ?? '21:00'}
+                        onChange={(e) =>
+                          setSettingsDraft((s) => ({
+                            ...s,
+                            working_hours_end: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <label>Schedule on these days</label>
+                    <div className="weekday-picker" role="group" aria-label="Schedule days">
+                      {SCHEDULE_WEEKDAYS.map(({ value, label }) => {
+                        const active = selectedWeekdays.includes(value);
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`weekday-toggle${active ? ' active' : ''}`}
+                            aria-pressed={active}
+                            onClick={() => toggleScheduleWeekday(value)}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="settings-hint">
+                      Events are only placed on selected days within your work hours.
+                    </p>
+                  </div>
+                  <div className="form-row" style={{ marginTop: '0.75rem' }}>
+                    <div>
+                      <label>Schedule ahead (days)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={settingsDraft.schedule_days_ahead ?? 7}
+                        onChange={(e) =>
+                          setSettingsDraft((s) => ({
+                            ...s,
+                            schedule_days_ahead: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label>Gap between events (min)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={5}
+                        value={settingsDraft.min_gap_minutes ?? 15}
+                        onChange={(e) =>
+                          setSettingsDraft((s) => ({
+                            ...s,
+                            min_gap_minutes: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
               <div style={{ marginTop: '0.75rem' }}>
                 <label>Timezone</label>
                 <input
