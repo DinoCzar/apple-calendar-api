@@ -140,21 +140,24 @@ label {
 
 .workspace-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
   padding: 0.25rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   width: fit-content;
+  max-width: 100%;
 }
 
 .workspace-tab {
   background: transparent;
   color: var(--text-muted);
-  padding: 0.45rem 0.9rem;
+  padding: 0.45rem 0.75rem;
   border-radius: 8px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .workspace-tab:hover:not(.active) {

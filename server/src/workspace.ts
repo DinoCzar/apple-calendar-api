@@ -1,7 +1,21 @@
 import type { Request } from 'express';
 
-export const WORKSPACE_IDS = ['smart', 'work'] as const;
+export const WORKSPACE_IDS = [
+  'smart',
+  'work',
+  'home',
+  'project',
+  'other',
+] as const;
 export type WorkspaceId = (typeof WORKSPACE_IDS)[number];
+
+const DEFAULT_CALENDAR_NAMES: Record<WorkspaceId, string> = {
+  smart: 'Smart Events',
+  work: 'Work Events',
+  home: 'Home Events',
+  project: 'Project Events',
+  other: 'Other Events',
+};
 
 export function isWorkspaceId(value: string): value is WorkspaceId {
   return WORKSPACE_IDS.includes(value as WorkspaceId);
@@ -33,5 +47,5 @@ export function settingsStorageKey(
 }
 
 export function defaultCalendarName(workspace: WorkspaceId): string {
-  return workspace === 'work' ? 'Work Events' : 'Smart Events';
+  return DEFAULT_CALENDAR_NAMES[workspace];
 }

@@ -4,6 +4,7 @@ import type { AppSettings, SmartEvent, SmartEventStatus } from '../types';
 import {
   defaultCalendarName,
   settingsStorageKey,
+  WORKSPACE_IDS,
   type WorkspaceId,
 } from '../workspace';
 import {
@@ -141,7 +142,7 @@ async function migrateLegacySettings(db: Client): Promise<void> {
 
 async function seedDefaultSettings(): Promise<void> {
   const db = getClient();
-  for (const workspace of ['smart', 'work'] as const) {
+  for (const workspace of WORKSPACE_IDS) {
     const defaults = workspaceDefaults(workspace);
     for (const [key, value] of Object.entries(defaults)) {
       const storageKey = settingsStorageKey(workspace, key);

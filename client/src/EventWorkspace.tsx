@@ -354,7 +354,7 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
             <form onSubmit={handleSaveSettings} className="settings-form">
               <p className="settings-hint" style={{ marginBottom: '0.75rem' }}>
                 Busy times are read from <strong>all iCloud calendars</strong> except
-                the Smart Events and Work Events output calendars.
+                the output calendars for each events page.
               </p>
               <div>
                 <label>Output calendar</label>
