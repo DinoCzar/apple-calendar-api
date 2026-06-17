@@ -56,6 +56,7 @@ interface PriorityQueueProps {
   onDelete: (id: string) => void;
   onComplete: (id: string) => void;
   onReorder: (ids: string[]) => Promise<SmartEvent[]>;
+  showMoveToBottom?: boolean;
 }
 
 export default function PriorityQueue({
@@ -65,6 +66,7 @@ export default function PriorityQueue({
   onDelete,
   onComplete,
   onReorder,
+  showMoveToBottom = false,
 }: PriorityQueueProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -153,6 +155,17 @@ export default function PriorityQueue({
     if (fromIndex === -1 || toIndex < 0 || toIndex >= current.length) return;
 
     commitReorderedList(reorder(current, fromIndex, toIndex));
+  }
+
+  function moveToBottom(eventId: string) {
+    if (saving) return;
+
+    const current = reorderableRef.current;
+    const fromIndex = current.findIndex((e) => e.id === eventId);
+    const lastIndex = current.length - 1;
+    if (fromIndex === -1 || fromIndex === lastIndex) return;
+
+    commitReorderedList(reorder(current, fromIndex, lastIndex));
   }
 
   function handleDrop(targetId: string) {
@@ -314,6 +327,11 @@ export default function PriorityQueue({
                     event={event}
                     onDelete={onDelete}
                     onComplete={onComplete}
+                    showMoveToBottom={showMoveToBottom}
+                    moveToBottomDisabled={
+                      saving || index === displayList.length - 1
+                    }
+                    onMoveToBottom={() => moveToBottom(event.id)}
                   />
                 </div>
                 <div className="mobile-reorder-bar">
@@ -409,10 +427,16 @@ function EventActions({
   event,
   onDelete,
   onComplete,
+  showMoveToBottom = false,
+  moveToBottomDisabled = false,
+  onMoveToBottom,
 }: {
   event: SmartEvent;
   onDelete: (id: string) => void;
   onComplete: (id: string) => void;
+  showMoveToBottom?: boolean;
+  moveToBottomDisabled?: boolean;
+  onMoveToBottom?: () => void;
 }) {
   const labels: Record<SmartEvent['status'], string> = {
     pending: 'Pending',
@@ -425,13 +449,26 @@ function EventActions({
     <div className="event-actions">
       <span className={`badge badge-${event.status}`}>{labels[event.status]}</span>
       {event.status !== 'completed' && (
-        <button
-          className="btn-secondary"
-          style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
-          onClick={() => onComplete(event.id)}
-        >
-          Done
-        </button>
+        <>
+          {showMoveToBottom && (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+              disabled={moveToBottomDisabled}
+              onClick={onMoveToBottom}
+            >
+              Lowest priority
+            </button>
+          )}
+          <button
+            className="btn-secondary"
+            style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+            onClick={() => onComplete(event.id)}
+          >
+            Done
+          </button>
+        </>
       )}
       <button className="btn-danger" onClick={() => onDelete(event.id)}>
         Delete
