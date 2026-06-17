@@ -272,6 +272,58 @@ function recurringPatternIsFree(
   return true;
 }
 
+function tryPlaceRecurringEventAtFixedTime(
+  event: SmartEvent,
+  rangeStart: Date,
+  rangeEnd: Date,
+  now: Date,
+  allBusy: TimeSlot[],
+  placedSlots: TimeSlot[],
+  settings: AppSettings,
+  gapMs: number
+): TimeSlot | null {
+  const repeatDays = event.repeat_days_of_week ?? [];
+  const repeatTime = event.repeat_time_of_day;
+  if (repeatDays.length === 0 || !repeatTime?.match(/^\d{2}:\d{2}$/)) {
+    return null;
+  }
+
+  const timezone = settings.timezone;
+  const durationMs = event.duration_minutes * 60 * 1000;
+
+  for (let d = 0; d < settings.schedule_days_ahead; d++) {
+    const day = addDaysInTimezone(rangeStart, d, timezone);
+    if (!isSchedulableDay(day, settings)) continue;
+    if (!repeatDays.includes(getWeekdayInTimezone(day, timezone))) continue;
+
+    const start = parseTimeOnDate(day, repeatTime, timezone);
+    const earliest = getScheduleEarliestInstant(settings, day, now);
+    if (start < earliest) continue;
+
+    const end = new Date(start.getTime() + durationMs);
+    const dayWorkEnd = parseTimeOnDate(day, settings.working_hours_end, timezone);
+    if (end > dayWorkEnd) continue;
+
+    if (
+      recurringPatternIsFree(
+        start,
+        durationMs,
+        repeatDays,
+        rangeStart,
+        rangeEnd,
+        allBusy,
+        placedSlots,
+        settings,
+        gapMs
+      )
+    ) {
+      return { start, end };
+    }
+  }
+
+  return null;
+}
+
 function tryPlaceRecurringEvent(
   event: SmartEvent,
   rangeStart: Date,
@@ -285,6 +337,19 @@ function tryPlaceRecurringEvent(
 ): TimeSlot | null {
   const repeatDays = event.repeat_days_of_week ?? [];
   if (repeatDays.length === 0) return null;
+
+  if (event.repeat_time_of_day?.match(/^\d{2}:\d{2}$/)) {
+    return tryPlaceRecurringEventAtFixedTime(
+      event,
+      rangeStart,
+      rangeEnd,
+      now,
+      allBusy,
+      placedSlots,
+      settings,
+      gapMs
+    );
+  }
 
   const durationMs = event.duration_minutes * 60 * 1000;
 

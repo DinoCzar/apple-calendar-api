@@ -63,6 +63,7 @@ export function createWorkspaceApi(workspace: WorkspaceId) {
       duration_minutes?: number;
       priority?: number;
       repeat_days_of_week?: number[];
+      repeat_time_of_day?: string;
     }) =>
       request<SmartEvent>('/smart-events', {
         method: 'POST',

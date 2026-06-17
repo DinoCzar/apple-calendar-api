@@ -35,6 +35,26 @@ function validateRepeatDays(
   return null;
 }
 
+function validateRepeatTime(
+  workspace: WorkspaceId,
+  repeatTime: unknown
+): string | null {
+  if (workspace !== 'recurring') {
+    return null;
+  }
+
+  if (typeof repeatTime !== 'string' || !/^\d{2}:\d{2}$/.test(repeatTime)) {
+    return 'Choose a valid time of day for the recurring event';
+  }
+
+  const [hour, minute] = repeatTime.split(':').map(Number);
+  if (hour > 23 || minute > 59) {
+    return 'Choose a valid time of day for the recurring event';
+  }
+
+  return null;
+}
+
 router.get('/', async (req, res) => {
   try {
     const workspace = workspaceFromRequest(req);
@@ -85,6 +105,11 @@ router.post('/', async (req, res) => {
     const repeatError = validateRepeatDays(workspace, input.repeat_days_of_week);
     if (repeatError) {
       res.status(400).json({ error: repeatError });
+      return;
+    }
+    const timeError = validateRepeatTime(workspace, input.repeat_time_of_day);
+    if (timeError) {
+      res.status(400).json({ error: timeError });
       return;
     }
     const event = await createSmartEvent(workspace, input);

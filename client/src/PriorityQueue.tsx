@@ -385,7 +385,11 @@ function EventBody({ event }: { event: SmartEvent }) {
         <span>{event.duration_minutes} min</span>
         <span>Priority {event.priority}</span>
         {event.repeat_days_of_week && event.repeat_days_of_week.length > 0 && (
-          <span>Repeats weekly: {formatRepeatDaysLabel(event.repeat_days_of_week)}</span>
+          <span>
+            Repeats weekly: {formatRepeatDaysLabel(event.repeat_days_of_week)}
+            {event.repeat_time_of_day &&
+              ` at ${formatRepeatTimeOfDay(event.repeat_time_of_day)}`}
+          </span>
         )}
         {event.scheduled_start && event.scheduled_end && (
           <span>
@@ -441,6 +445,16 @@ function formatDateTime(iso: string): string {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatRepeatTimeOfDay(time: string): string {
+  const [hour, minute] = time.split(':').map(Number);
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return date.toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
   });
