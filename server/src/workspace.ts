@@ -6,6 +6,7 @@ export const WORKSPACE_IDS = [
   'home',
   'project',
   'other',
+  'recurring',
 ] as const;
 export type WorkspaceId = (typeof WORKSPACE_IDS)[number];
 
@@ -15,6 +16,7 @@ const DEFAULT_CALENDAR_NAMES: Record<WorkspaceId, string> = {
   home: 'Home Events',
   project: 'Project Events',
   other: 'Other Events',
+  recurring: 'Recurring Events',
 };
 
 export function isWorkspaceId(value: string): value is WorkspaceId {
