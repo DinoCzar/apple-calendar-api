@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, createWorkspaceApi } from './api';
+import GroceryListModal from './GroceryListModal';
+import {
+  formatGroceryListText,
+  GROCERY_LIST_DAY_OPTIONS,
+  type GroceryListDays,
+} from './grocery';
 import PriorityQueue from './PriorityQueue';
 import type { AppSettings, SmartEvent, SyncResult } from './types';
 import { toPersistedSettings } from './types';
@@ -59,6 +65,8 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
   const [icloudCalendars, setIcloudCalendars] = useState<string[]>([]);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   const [busyPreviewRefresh, setBusyPreviewRefresh] = useState(0);
+  const [groceryListDays, setGroceryListDays] = useState<GroceryListDays>(7);
+  const [groceryListText, setGroceryListText] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -264,6 +272,10 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
     });
   }
 
+  function handleCreateGroceryList() {
+    setGroceryListText(formatGroceryListText(events, groceryListDays));
+  }
+
   return (
     <>
       <header className="header workspace-header">
@@ -285,6 +297,31 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
           )}
         </div>
         <div className="header-actions">
+          {isGroceryWorkspace && (
+            <div className="grocery-list-controls">
+              <span className="grocery-list-label">Days</span>
+              <div className="grocery-list-days" role="group" aria-label="Grocery list days">
+                {GROCERY_LIST_DAY_OPTIONS.map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    className={`weekday-toggle${groceryListDays === days ? ' active' : ''}`}
+                    aria-pressed={groceryListDays === days}
+                    onClick={() => setGroceryListDays(days)}
+                  >
+                    {days}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleCreateGroceryList}
+              >
+                Create grocery list
+              </button>
+            </div>
+          )}
           <button
             className="btn-primary"
             onClick={handleSync}
@@ -332,6 +369,14 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
             </div>
           )}
         </div>
+      )}
+
+      {groceryListText !== null && (
+        <GroceryListModal
+          text={groceryListText}
+          days={groceryListDays}
+          onClose={() => setGroceryListText(null)}
+        />
       )}
 
       <div className="grid">
