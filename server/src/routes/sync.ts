@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getSettings } from '../db';
-import { fetchAllBusyEvents, getScheduleFetchRange } from '../services/caldav';
+import { fetchAllBusyEvents, getScheduleFetchRange, getSchedulingWindow } from '../services/caldav';
 import { runFullSync, runRecall } from '../services/sync';
 import { isICloudConfigured } from '../config';
 
@@ -52,6 +52,7 @@ router.get('/preview', async (req, res) => {
 
     const settings = await getSettings();
     const { start: rangeStart, end: rangeEnd } = getScheduleFetchRange(settings);
+    const { start: windowStart, end: windowEnd } = getSchedulingWindow(settings);
     const refresh =
       req.query.refresh === '1' ||
       req.query.refresh === 'true' ||
@@ -64,8 +65,12 @@ router.get('/preview', async (req, res) => {
 
     res.json({
       fetched_at: now.toISOString(),
+      schedule_window: {
+        start: windowStart.toISOString(),
+        end: windowEnd.toISOString(),
+      },
       busy_events: busyEvents
-        .filter((e) => e.end > now)
+        .filter((e) => e.end > now && e.start < windowEnd && e.end > windowStart)
         .map((e) => ({
           title: e.title,
           start: e.start.toISOString(),

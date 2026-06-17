@@ -547,6 +547,109 @@ function startOfDayInTimezone(date: Date, timezone: string): Date {
   return makeDateInTimezone(year, month, day, 0, 0, timezone);
 }
 
+function parseTimeOnDate(date: Date, timeStr: string, timezone: string): Date {
+  const dateStr = formatDateInTimezone(date, timezone);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, minute] = timeStr.split(':').map(Number);
+  return makeDateInTimezone(year, month, day, hour, minute, timezone);
+}
+
+export function getSchedulingWindow(settings: AppSettings): {
+  start: Date;
+  end: Date;
+} {
+  const now = new Date();
+  const rangeStart = startOfDayInTimezone(now, settings.timezone);
+  const lastDay = addDaysInTimezone(
+    rangeStart,
+    Math.max(settings.schedule_days_ahead - 1, 0),
+    settings.timezone
+  );
+  const windowStart = parseTimeOnDate(
+    rangeStart,
+    settings.working_hours_start,
+    settings.timezone
+  );
+  const windowEnd = parseTimeOnDate(
+    lastDay,
+    settings.working_hours_end,
+    settings.timezone
+  );
+
+  return {
+    start: windowStart > now ? windowStart : now,
+    end: windowEnd,
+  };
+}
+
+export function filterEventsToSchedulingWindow(
+  events: CalendarEvent[],
+  settings: AppSettings,
+  now = new Date()
+): CalendarEvent[] {
+  const rangeStart = startOfDayInTimezone(now, settings.timezone);
+  const lastSchedulableDay = addDaysInTimezone(
+    rangeStart,
+    Math.max(settings.schedule_days_ahead - 1, 0),
+    settings.timezone
+  );
+  const filtered: CalendarEvent[] = [];
+
+  for (const event of events) {
+    if (event.allDay) {
+      let day = startOfDayInTimezone(event.start, settings.timezone);
+      const endDay = startOfDayInTimezone(event.end, settings.timezone);
+      let included = false;
+
+      while (day < endDay) {
+        if (day >= rangeStart && day <= lastSchedulableDay) {
+          included = true;
+          break;
+        }
+        day = addDaysInTimezone(day, 1, settings.timezone);
+      }
+
+      if (included) {
+        filtered.push(event);
+      }
+      continue;
+    }
+
+    for (let d = 0; d < settings.schedule_days_ahead; d++) {
+      const day = addDaysInTimezone(rangeStart, d, settings.timezone);
+      const dayWorkStart = parseTimeOnDate(
+        day,
+        settings.working_hours_start,
+        settings.timezone
+      );
+      const dayWorkEnd = parseTimeOnDate(
+        day,
+        settings.working_hours_end,
+        settings.timezone
+      );
+      const effectiveStart = dayWorkStart > now ? dayWorkStart : now;
+      const overlapStart = new Date(
+        Math.max(event.start.getTime(), effectiveStart.getTime())
+      );
+      const overlapEnd = new Date(
+        Math.min(event.end.getTime(), dayWorkEnd.getTime())
+      );
+
+      if (overlapEnd > overlapStart) {
+        filtered.push({
+          ...event,
+          uid: `${event.uid}::${overlapStart.toISOString()}`,
+          start: overlapStart,
+          end: overlapEnd,
+          isRecurrenceInstance: event.isRecurrenceInstance,
+        });
+      }
+    }
+  }
+
+  return filtered.sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
 export function getScheduleFetchRange(settings: AppSettings): {
   start: Date;
   end: Date;
@@ -671,8 +774,9 @@ export async function fetchAllBusyEvents(
   }
 
   const events = [...eventMap.values()];
-  return removeStaleUidVersions(events).sort(
-    (a, b) => a.start.getTime() - b.start.getTime()
+  return filterEventsToSchedulingWindow(
+    removeStaleUidVersions(events),
+    settings
   );
 }
 
