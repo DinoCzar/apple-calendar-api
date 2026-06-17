@@ -17,6 +17,7 @@ import {
   resetCaldavClient,
 } from './caldav';
 import { scheduleSmartEvents } from './scheduler';
+import { formatGroceryCalendarNotes } from './grocery-traits';
 import type { AppSettings, RecallResult, SmartEvent, SyncResult } from '../types';
 import { WORKSPACE_IDS, type WorkspaceId } from '../workspace';
 
@@ -201,7 +202,10 @@ export async function runFullSync(
         settings,
         uid,
         title: saved.title,
-        description: saved.description,
+        description:
+          workspace === 'grocery'
+            ? formatGroceryCalendarNotes(saved)
+            : saved.description,
         start: new Date(saved.scheduled_start),
         end: new Date(saved.scheduled_end),
         repeatDaysOfWeek: saved.repeat_days_of_week,

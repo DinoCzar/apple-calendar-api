@@ -71,6 +71,12 @@ function rowToSmartEvent(row: Record<string, unknown>): SmartEvent {
       : null,
     repeat_time_of_day:
       row.repeat_time_of_day != null ? String(row.repeat_time_of_day) : null,
+    grocery_sides:
+      row.grocery_sides != null ? String(row.grocery_sides) : null,
+    grocery_recipe:
+      row.grocery_recipe != null ? String(row.grocery_recipe) : null,
+    grocery_ingredients:
+      row.grocery_ingredients != null ? String(row.grocery_ingredients) : null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -135,6 +141,20 @@ async function migrateSmartEventsSchema(db: Client): Promise<void> {
       );
     } catch {
       // Column already exists
+    }
+  }
+
+  for (const column of [
+    'grocery_sides',
+    'grocery_recipe',
+    'grocery_ingredients',
+  ]) {
+    if (!columns.has(column)) {
+      try {
+        await db.execute(`ALTER TABLE smart_events ADD COLUMN ${column} TEXT`);
+      } catch {
+        // Column already exists
+      }
     }
   }
 }
@@ -247,6 +267,9 @@ export async function createSmartEvent(
     priority?: number;
     repeat_days_of_week?: number[] | null;
     repeat_time_of_day?: string | null;
+    grocery_sides?: string | null;
+    grocery_recipe?: string | null;
+    grocery_ingredients?: string | null;
   }
 ): Promise<SmartEvent> {
   const db = getClient();
@@ -263,8 +286,8 @@ export async function createSmartEvent(
 
   await db.execute({
     sql: `INSERT INTO smart_events
-          (id, title, description, duration_minutes, priority, status, workspace, repeat_days_of_week, repeat_time_of_day, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+          (id, title, description, duration_minutes, priority, status, workspace, repeat_days_of_week, repeat_time_of_day, grocery_sides, grocery_recipe, grocery_ingredients, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       data.title,
@@ -276,6 +299,9 @@ export async function createSmartEvent(
         ? formatScheduleDaysOfWeek(data.repeat_days_of_week)
         : null,
       data.repeat_time_of_day ?? null,
+      data.grocery_sides ?? null,
+      data.grocery_recipe ?? null,
+      data.grocery_ingredients ?? null,
       now,
       now,
     ],

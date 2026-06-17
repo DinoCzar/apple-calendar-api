@@ -49,6 +49,9 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
     1, 2, 3, 4, 5,
   ]);
   const [createRepeatTime, setCreateRepeatTime] = useState('09:00');
+  const [createGrocerySides, setCreateGrocerySides] = useState('');
+  const [createGroceryRecipe, setCreateGroceryRecipe] = useState('');
+  const [createGroceryIngredients, setCreateGroceryIngredients] = useState('');
   const [creating, setCreating] = useState(false);
 
   const [settingsDraft, setSettingsDraft] = useState<Partial<AppSettings>>({});
@@ -98,6 +101,7 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
   }
 
   const isRecurringWorkspace = workspace === 'recurring';
+  const isGroceryWorkspace = workspace === 'grocery';
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -112,7 +116,7 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
       const pendingCount = events.filter((ev) => ev.status === 'pending').length;
       await workspaceApi.createSmartEvent({
         title: title.trim(),
-        description: description.trim() || undefined,
+        description: isGroceryWorkspace ? undefined : description.trim() || undefined,
         duration_minutes: duration,
         priority: pendingCount + 1,
         ...(isRecurringWorkspace
@@ -121,10 +125,22 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
               repeat_time_of_day: createRepeatTime,
             }
           : {}),
+        ...(isGroceryWorkspace
+          ? {
+              grocery_sides: createGrocerySides.trim() || undefined,
+              grocery_recipe: createGroceryRecipe.trim() || undefined,
+              grocery_ingredients: createGroceryIngredients.trim() || undefined,
+            }
+          : {}),
       });
       setTitle('');
       setDescription('');
       setDuration(30);
+      if (isGroceryWorkspace) {
+        setCreateGrocerySides('');
+        setCreateGroceryRecipe('');
+        setCreateGroceryIngredients('');
+      }
       if (isRecurringWorkspace) {
         setCreateRepeatDays([1, 2, 3, 4, 5]);
         setCreateRepeatTime('09:00');
@@ -320,18 +336,59 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                   required
                 />
               </div>
-              <div>
-                <label htmlFor={`description-${workspace}`}>
-                  Description (optional)
-                </label>
-                <textarea
-                  id={`description-${workspace}`}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={2}
-                  placeholder="Notes or details"
-                />
-              </div>
+              {isGroceryWorkspace ? (
+                <>
+                  <div>
+                    <label htmlFor={`grocery-ingredients-${workspace}`}>
+                      Ingredients (optional)
+                    </label>
+                    <textarea
+                      id={`grocery-ingredients-${workspace}`}
+                      value={createGroceryIngredients}
+                      onChange={(e) => setCreateGroceryIngredients(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. chicken, rice, broccoli"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor={`grocery-recipe-${workspace}`}>
+                      Recipe (optional)
+                    </label>
+                    <textarea
+                      id={`grocery-recipe-${workspace}`}
+                      value={createGroceryRecipe}
+                      onChange={(e) => setCreateGroceryRecipe(e.target.value)}
+                      rows={2}
+                      placeholder="Prep steps or recipe link"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor={`grocery-sides-${workspace}`}>
+                      Sides (optional)
+                    </label>
+                    <textarea
+                      id={`grocery-sides-${workspace}`}
+                      value={createGrocerySides}
+                      onChange={(e) => setCreateGrocerySides(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. salad, garlic bread"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label htmlFor={`description-${workspace}`}>
+                    Description (optional)
+                  </label>
+                  <textarea
+                    id={`description-${workspace}`}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={2}
+                    placeholder="Notes or details"
+                  />
+                </div>
+              )}
               {isRecurringWorkspace && (
                 <div>
                   <label>Repeat weekly on</label>
@@ -415,6 +472,7 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                 onComplete={handleComplete}
                 onReorder={(ids) => workspaceApi.reorderSmartEvents(ids)}
                 showMoveToBottom={workspace === 'grocery'}
+                showGroceryTraits={workspace === 'grocery'}
               />
             )}
           </div>

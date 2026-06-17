@@ -94,13 +94,35 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+function normalizeOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function stripGroceryFields(input: CreateSmartEventInput): CreateSmartEventInput {
+  const { grocery_sides, grocery_recipe, grocery_ingredients, ...rest } = input;
+  return rest;
+}
+
 router.post('/', async (req, res) => {
   try {
     const workspace = workspaceFromRequest(req);
-    const input = req.body as CreateSmartEventInput;
+    let input = req.body as CreateSmartEventInput;
     if (!input.title?.trim()) {
       res.status(400).json({ error: 'Title is required' });
       return;
+    }
+    if (workspace === 'grocery') {
+      input = {
+        ...input,
+        grocery_sides: normalizeOptionalText(input.grocery_sides) ?? undefined,
+        grocery_recipe: normalizeOptionalText(input.grocery_recipe) ?? undefined,
+        grocery_ingredients:
+          normalizeOptionalText(input.grocery_ingredients) ?? undefined,
+      };
+    } else {
+      input = stripGroceryFields(input);
     }
     const repeatError = validateRepeatDays(workspace, input.repeat_days_of_week);
     if (repeatError) {

@@ -10,6 +10,9 @@ export interface SmartEvent {
   apple_event_uid: string | null;
   repeat_days_of_week: number[] | null;
   repeat_time_of_day: string | null;
+  grocery_sides: string | null;
+  grocery_recipe: string | null;
+  grocery_ingredients: string | null;
   created_at: string;
   updated_at: string;
 }
