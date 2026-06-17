@@ -3,8 +3,18 @@ import { getSettings } from '../db';
 import { fetchAllBusyEvents, getScheduleFetchRange, getSchedulingWindow } from '../services/caldav';
 import { runFullSync, runRecall } from '../services/sync';
 import { isICloudConfigured } from '../config';
+import { WORKSPACE_IDS, workspaceFromRequest } from '../workspace';
 
 const router = Router();
+
+async function outputCalendarNames(): Promise<string[]> {
+  const names = new Set<string>();
+  for (const workspace of WORKSPACE_IDS) {
+    const settings = await getSettings(workspace);
+    names.add(settings.smart_calendar_name);
+  }
+  return [...names];
+}
 
 router.post('/', async (req, res) => {
   try {
@@ -15,15 +25,16 @@ router.post('/', async (req, res) => {
       return;
     }
 
+    const workspace = workspaceFromRequest(req);
     const reschedule = req.body?.reschedule !== false;
-    const result = await runFullSync({ reschedule });
+    const result = await runFullSync({ workspace, reschedule });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-router.post('/recall', async (_req, res) => {
+router.post('/recall', async (req, res) => {
   try {
     if (!isICloudConfigured()) {
       res.status(400).json({
@@ -32,7 +43,8 @@ router.post('/recall', async (_req, res) => {
       return;
     }
 
-    const result = await runRecall();
+    const workspace = workspaceFromRequest(req);
+    const result = await runRecall(workspace);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -50,7 +62,9 @@ router.get('/preview', async (req, res) => {
 
     res.set('Cache-Control', 'no-store');
 
-    const settings = await getSettings();
+    const workspace = workspaceFromRequest(req);
+    const settings = await getSettings(workspace);
+    const excludeCalendarNames = await outputCalendarNames();
     const { start: rangeStart, end: rangeEnd } = getScheduleFetchRange(settings);
     const { start: windowStart, end: windowEnd } = getSchedulingWindow(settings);
     const refresh =
@@ -60,6 +74,7 @@ router.get('/preview', async (req, res) => {
 
     const busyEvents = await fetchAllBusyEvents(settings, rangeStart, rangeEnd, {
       refresh,
+      excludeCalendarNames,
     });
     const now = new Date();
 

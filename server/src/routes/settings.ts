@@ -3,13 +3,15 @@ import { getSettings, updateSettings } from '../db';
 import { listCalendars } from '../services/caldav';
 import { isICloudConfigured } from '../config';
 import type { AppSettings } from '../types';
+import { workspaceFromRequest } from '../workspace';
 
 const router = Router();
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
+    const workspace = workspaceFromRequest(req);
     res.set('Cache-Control', 'no-store');
-    const settings = await getSettings();
+    const settings = await getSettings(workspace);
     res.json({
       ...settings,
       icloud_configured: isICloudConfigured(),
@@ -21,8 +23,9 @@ router.get('/', async (_req, res) => {
 
 router.put('/', async (req, res) => {
   try {
+    const workspace = workspaceFromRequest(req);
     const updates = req.body as Partial<AppSettings>;
-    const settings = await updateSettings(updates);
+    const settings = await updateSettings(workspace, updates);
     res.set('Cache-Control', 'no-store');
     res.json({
       ...settings,

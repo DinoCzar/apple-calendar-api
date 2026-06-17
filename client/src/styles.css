@@ -117,6 +117,65 @@ label {
   padding: 2rem 1.5rem 4rem;
 }
 
+.app-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.app-top-bar-start {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.app-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.workspace-tabs {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: fit-content;
+}
+
+.workspace-tab {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.workspace-tab:hover:not(.active) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.workspace-tab.active {
+  background: var(--accent);
+  color: white;
+}
+
+.workspace-header {
+  margin-bottom: 1.5rem;
+}
+
+.workspace-description {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
 .header {
   display: flex;
   align-items: flex-start;
