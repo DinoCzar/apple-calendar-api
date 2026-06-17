@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { api } from './api';
 import type { SmartEvent } from './types';
 
 function reorder<T>(list: T[], fromIndex: number, toIndex: number): T[] {
@@ -55,6 +54,7 @@ interface PriorityQueueProps {
   onError: (message: string) => void;
   onDelete: (id: string) => void;
   onComplete: (id: string) => void;
+  onReorder: (ids: string[]) => Promise<SmartEvent[]>;
 }
 
 export default function PriorityQueue({
@@ -63,6 +63,7 @@ export default function PriorityQueue({
   onError,
   onDelete,
   onComplete,
+  onReorder,
 }: PriorityQueueProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -93,7 +94,7 @@ export default function PriorityQueue({
   async function persistOrder(reordered: SmartEvent[]) {
     setSaving(true);
     try {
-      const updated = await api.reorderSmartEvents(reordered.map((e) => e.id));
+      const updated = await onReorder(reordered.map((e) => e.id));
       const completedIds = new Set(completedRef.current.map((e) => e.id));
       onChange([
         ...sortByPriority(updated.filter((e) => !completedIds.has(e.id))),

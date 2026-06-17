@@ -1,85 +1,40 @@
-import { createClient, type Client, type InValue } from '@libsql/client';
-import { config } from '../config';
-import type {
-  AppSettings,
-  CreateSmartEventInput,
-  SmartEvent,
-  SmartEventStatus,
-  UpdateSmartEventInput,
-} from '../types';
+import { createClient, type Client } from '@libsql/client';
+import { randomUUID } from 'crypto';
+import type { AppSettings, SmartEvent, SmartEventStatus } from '../types';
+import {
+  defaultCalendarName,
+  settingsStorageKey,
+  type WorkspaceId,
+} from '../workspace';
 
-let db: Client | null = null;
+let client: Client | null = null;
 
-function getDb(): Client {
-  if (!db) {
-    if (!config.turso.url) {
-      throw new Error(
-        'TURSO_DATABASE_URL is required (e.g. libsql://your-db.turso.io or file:local.db for dev)'
-      );
+const DEFAULT_SETTINGS: Omit<AppSettings, 'smart_calendar_name'> & {
+  smart_calendar_name?: string;
+} = {
+  apple_calendar_name: '',
+  working_hours_start: '09:00',
+  working_hours_end: '17:00',
+  schedule_days_ahead: 7,
+  min_gap_minutes: 15,
+  timezone: 'America/Los_Angeles',
+};
+
+function getClient(): Client {
+  if (!client) {
+    const url = process.env.TURSO_DATABASE_URL;
+    const authToken = process.env.TURSO_AUTH_TOKEN;
+
+    if (!url) {
+      throw new Error('TURSO_DATABASE_URL is required');
     }
 
-    db = createClient({
-      url: config.turso.url,
-      authToken: config.turso.authToken || undefined,
+    client = createClient({
+      url,
+      authToken: authToken || undefined,
     });
   }
-
-  return db;
-}
-
-export async function closeDb(): Promise<void> {
-  if (db) {
-    db.close();
-    db = null;
-  }
-}
-
-const SMART_EVENTS_SCHEMA = `
-CREATE TABLE IF NOT EXISTS smart_events (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT,
-  duration_minutes INTEGER NOT NULL DEFAULT 30,
-  priority INTEGER NOT NULL DEFAULT 3,
-  status TEXT NOT NULL DEFAULT 'pending',
-  scheduled_start TEXT,
-  scheduled_end TEXT,
-  apple_event_uid TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-)`;
-
-const SETTINGS_SCHEMA = `
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-)`;
-
-export async function initDb(): Promise<void> {
-  const client = getDb();
-  await client.execute(SMART_EVENTS_SCHEMA);
-  await client.execute(SETTINGS_SCHEMA);
-  await seedDefaultSettings();
-}
-
-async function seedDefaultSettings(): Promise<void> {
-  const defaults: Record<string, string> = {
-    apple_calendar_name: config.defaults.appleCalendarName,
-    smart_calendar_name: config.defaults.smartCalendarName,
-    working_hours_start: config.defaults.workingHoursStart,
-    working_hours_end: config.defaults.workingHoursEnd,
-    schedule_days_ahead: String(config.defaults.scheduleDaysAhead),
-    min_gap_minutes: String(config.defaults.minGapMinutes),
-    timezone: config.defaults.timezone,
-  };
-
-  const client = getDb();
-  for (const [key, value] of Object.entries(defaults)) {
-    await client.execute({
-      sql: `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`,
-      args: [key, value],
-    });
-  }
+  return client;
 }
 
 function rowToSmartEvent(row: Record<string, unknown>): SmartEvent {
@@ -91,216 +46,376 @@ function rowToSmartEvent(row: Record<string, unknown>): SmartEvent {
     priority: Number(row.priority),
     status: row.status as SmartEventStatus,
     scheduled_start: row.scheduled_start
-      ? new Date(String(row.scheduled_start)).toISOString()
+      ? String(row.scheduled_start)
       : null,
-    scheduled_end: row.scheduled_end
-      ? new Date(String(row.scheduled_end)).toISOString()
-      : null,
-    apple_event_uid:
-      row.apple_event_uid != null ? String(row.apple_event_uid) : null,
-    created_at: new Date(String(row.created_at)).toISOString(),
-    updated_at: new Date(String(row.updated_at)).toISOString(),
+    scheduled_end: row.scheduled_end ? String(row.scheduled_end) : null,
+    apple_event_uid: row.calendar_uid ? String(row.calendar_uid) : null,
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
   };
 }
 
-export async function getSettings(): Promise<AppSettings> {
-  const result = await getDb().execute('SELECT key, value FROM settings');
-  const map = Object.fromEntries(
-    result.rows.map((r) => [String(r.key), String(r.value)])
-  ) as Record<string, string>;
-
+function workspaceDefaults(workspace: WorkspaceId): AppSettings {
   return {
-    apple_calendar_name: map.apple_calendar_name || config.defaults.appleCalendarName,
-    smart_calendar_name: map.smart_calendar_name || config.defaults.smartCalendarName,
-    working_hours_start: map.working_hours_start || config.defaults.workingHoursStart,
-    working_hours_end: map.working_hours_end || config.defaults.workingHoursEnd,
-    schedule_days_ahead: parseInt(map.schedule_days_ahead || '7', 10),
-    min_gap_minutes: parseInt(map.min_gap_minutes || '15', 10),
-    timezone: map.timezone || config.defaults.timezone,
+    ...DEFAULT_SETTINGS,
+    smart_calendar_name: defaultCalendarName(workspace),
   };
 }
 
-const SETTINGS_KEYS: (keyof AppSettings)[] = [
-  'apple_calendar_name',
-  'smart_calendar_name',
-  'working_hours_start',
-  'working_hours_end',
-  'schedule_days_ahead',
-  'min_gap_minutes',
-  'timezone',
-];
+async function migrateLegacySettings(db: Client): Promise<void> {
+  const legacy = await db.execute('SELECT key, value FROM settings');
+  for (const row of legacy.rows) {
+    const key = String(row.key);
+    if (key.includes(':')) continue;
 
-export async function updateSettings(
-  updates: Partial<AppSettings>
-): Promise<AppSettings> {
-  const client = getDb();
-  for (const key of SETTINGS_KEYS) {
-    const value = updates[key];
-    if (value !== undefined) {
-      await client.execute({
+    const scoped = settingsStorageKey('smart', key);
+    await db.execute({
+      sql: `INSERT INTO settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      args: [scoped, String(row.value)],
+    });
+    await db.execute({
+      sql: 'DELETE FROM settings WHERE key = ?',
+      args: [key],
+    });
+  }
+}
+
+async function seedDefaultSettings(): Promise<void> {
+  const db = getClient();
+  for (const workspace of ['smart', 'work'] as const) {
+    const defaults = workspaceDefaults(workspace);
+    for (const [key, value] of Object.entries(defaults)) {
+      const storageKey = settingsStorageKey(workspace, key);
+      await db.execute({
         sql: `INSERT INTO settings (key, value) VALUES (?, ?)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-        args: [key, String(value)],
+              ON CONFLICT(key) DO NOTHING`,
+        args: [storageKey, String(value)],
       });
     }
   }
-  return getSettings();
 }
 
-export async function listSmartEvents(): Promise<SmartEvent[]> {
-  const result = await getDb().execute(
-    `SELECT * FROM smart_events ORDER BY
-      CASE status
-        WHEN 'pending' THEN 0
-        WHEN 'scheduled' THEN 1
-        WHEN 'synced' THEN 2
-        ELSE 3
-      END,
-      priority ASC,
-      created_at ASC`
-  );
+export async function initDb(): Promise<void> {
+  const db = getClient();
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS smart_events (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      duration_minutes INTEGER NOT NULL DEFAULT 30,
+      priority INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      scheduled_start TEXT,
+      scheduled_end TEXT,
+      calendar_uid TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  try {
+    await db.execute(
+      `ALTER TABLE smart_events ADD COLUMN workspace TEXT NOT NULL DEFAULT 'smart'`
+    );
+  } catch {
+    // Column already exists
+  }
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
+
+  await migrateLegacySettings(db);
+  await seedDefaultSettings();
+}
+
+export async function listSmartEvents(
+  workspace: WorkspaceId
+): Promise<SmartEvent[]> {
+  const db = getClient();
+  const result = await db.execute({
+    sql: `SELECT * FROM smart_events
+          WHERE workspace = ?
+          ORDER BY priority ASC, created_at ASC`,
+    args: [workspace],
+  });
   return result.rows.map((row) => rowToSmartEvent(row as Record<string, unknown>));
 }
 
-export async function getSmartEvent(id: string): Promise<SmartEvent | null> {
-  const result = await getDb().execute({
-    sql: 'SELECT * FROM smart_events WHERE id = ?',
-    args: [id],
-  });
-  return result.rows[0]
-    ? rowToSmartEvent(result.rows[0] as Record<string, unknown>)
-    : null;
-}
-
-export async function createSmartEvent(
+export async function getSmartEvent(
   id: string,
-  input: CreateSmartEventInput
-): Promise<SmartEvent> {
-  const result = await getDb().execute({
-    sql: `INSERT INTO smart_events (id, title, description, duration_minutes, priority)
-          VALUES (?, ?, ?, ?, ?)
-          RETURNING *`,
-    args: [
-      id,
-      input.title,
-      input.description ?? null,
-      input.duration_minutes ?? 30,
-      input.priority ?? 3,
-    ],
+  workspace: WorkspaceId
+): Promise<SmartEvent | null> {
+  const db = getClient();
+  const result = await db.execute({
+    sql: 'SELECT * FROM smart_events WHERE id = ? AND workspace = ?',
+    args: [id, workspace],
   });
+  if (result.rows.length === 0) return null;
   return rowToSmartEvent(result.rows[0] as Record<string, unknown>);
 }
 
+export async function createSmartEvent(
+  workspace: WorkspaceId,
+  data: {
+    title: string;
+    description?: string;
+    duration_minutes?: number;
+    priority?: number;
+  }
+): Promise<SmartEvent> {
+  const db = getClient();
+  const id = randomUUID();
+  const now = new Date().toISOString();
+
+  const maxPriority = await db.execute({
+    sql: 'SELECT COALESCE(MAX(priority), -1) + 1 AS next FROM smart_events WHERE workspace = ?',
+    args: [workspace],
+  });
+  const priority =
+    data.priority ??
+    Number((maxPriority.rows[0] as Record<string, unknown>).next ?? 0);
+
+  await db.execute({
+    sql: `INSERT INTO smart_events
+          (id, title, description, duration_minutes, priority, status, workspace, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+    args: [
+      id,
+      data.title,
+      data.description ?? null,
+      data.duration_minutes ?? 30,
+      priority,
+      workspace,
+      now,
+      now,
+    ],
+  });
+
+  const created = await getSmartEvent(id, workspace);
+  if (!created) throw new Error('Failed to create smart event');
+  return created;
+}
+
+type SmartEventUpdate = Partial<
+  Pick<
+    SmartEvent,
+    | 'title'
+    | 'description'
+    | 'duration_minutes'
+    | 'priority'
+    | 'status'
+    | 'scheduled_start'
+    | 'scheduled_end'
+  >
+> & {
+  calendar_uid?: string | null;
+};
+
 export async function updateSmartEvent(
   id: string,
-  input: UpdateSmartEventInput
+  workspace: WorkspaceId,
+  updates: SmartEventUpdate
 ): Promise<SmartEvent | null> {
+  const db = getClient();
+  const existing = await getSmartEvent(id, workspace);
+  if (!existing) return null;
+
   const fields: string[] = [];
-  const values: InValue[] = [];
+  const values: (string | number | null)[] = [];
 
-  const allowed: (keyof UpdateSmartEventInput)[] = [
-    'title',
-    'description',
-    'duration_minutes',
-    'priority',
-    'status',
-  ];
-
-  for (const key of allowed) {
-    if (input[key] !== undefined) {
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
       fields.push(`${key} = ?`);
-      values.push(input[key]);
+      values.push(value as string | number | null);
     }
   }
 
-  if (fields.length === 0) return getSmartEvent(id);
+  if (fields.length === 0) return existing;
 
-  fields.push(`updated_at = datetime('now')`);
-  values.push(id);
+  fields.push("updated_at = datetime('now')");
+  values.push(id, workspace);
 
-  const result = await getDb().execute({
-    sql: `UPDATE smart_events SET ${fields.join(', ')} WHERE id = ? RETURNING *`,
+  await db.execute({
+    sql: `UPDATE smart_events SET ${fields.join(', ')} WHERE id = ? AND workspace = ?`,
     args: values,
   });
-  return result.rows[0]
-    ? rowToSmartEvent(result.rows[0] as Record<string, unknown>)
-    : null;
+
+  return getSmartEvent(id, workspace);
 }
 
-export async function reorderSmartEvents(ids: string[]): Promise<SmartEvent[]> {
-  const client = getDb();
-  const tx = await client.transaction('write');
-
-  try {
-    for (let i = 0; i < ids.length; i++) {
-      await tx.execute({
-        sql: `UPDATE smart_events SET priority = ?, updated_at = datetime('now') WHERE id = ?`,
-        args: [i + 1, ids[i]],
-      });
-    }
-    await tx.commit();
-  } catch (err) {
-    await tx.rollback();
-    throw err;
-  }
-
-  return listSmartEvents();
-}
-
-export async function deleteSmartEvent(id: string): Promise<boolean> {
-  const result = await getDb().execute({
-    sql: 'DELETE FROM smart_events WHERE id = ?',
-    args: [id],
+export async function deleteSmartEvent(
+  id: string,
+  workspace: WorkspaceId
+): Promise<boolean> {
+  const db = getClient();
+  const result = await db.execute({
+    sql: 'DELETE FROM smart_events WHERE id = ? AND workspace = ?',
+    args: [id, workspace],
   });
-  return result.rowsAffected > 0;
+  return (result.rowsAffected ?? 0) > 0;
 }
 
-export async function getPendingSmartEvents(): Promise<SmartEvent[]> {
-  const result = await getDb().execute(
-    `SELECT * FROM smart_events WHERE status = 'pending'
-     ORDER BY priority ASC, created_at ASC`
-  );
+export async function reorderSmartEvents(
+  workspace: WorkspaceId,
+  orderedIds: string[]
+): Promise<SmartEvent[]> {
+  const db = getClient();
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.execute({
+      sql: `UPDATE smart_events SET priority = ?, updated_at = datetime('now')
+            WHERE id = ? AND workspace = ?`,
+      args: [i, orderedIds[i], workspace],
+    });
+  }
+  return listSmartEvents(workspace);
+}
+
+export async function getPendingSmartEvents(
+  workspace: WorkspaceId
+): Promise<SmartEvent[]> {
+  const db = getClient();
+  const result = await db.execute({
+    sql: `SELECT * FROM smart_events
+          WHERE workspace = ? AND status = 'pending'
+          ORDER BY priority ASC, created_at ASC`,
+    args: [workspace],
+  });
   return result.rows.map((row) => rowToSmartEvent(row as Record<string, unknown>));
 }
 
-export async function getScheduledSmartEvents(): Promise<SmartEvent[]> {
-  const result = await getDb().execute(
-    `SELECT * FROM smart_events WHERE status IN ('scheduled', 'synced')
-     AND scheduled_start IS NOT NULL`
-  );
+export async function getScheduledSmartEvents(
+  workspace: WorkspaceId
+): Promise<SmartEvent[]> {
+  const db = getClient();
+  const result = await db.execute({
+    sql: `SELECT * FROM smart_events
+          WHERE workspace = ? AND status IN ('scheduled', 'synced')
+          ORDER BY scheduled_start ASC`,
+    args: [workspace],
+  });
   return result.rows.map((row) => rowToSmartEvent(row as Record<string, unknown>));
+}
+
+export async function resetScheduledSmartEvents(
+  workspace: WorkspaceId
+): Promise<number> {
+  const db = getClient();
+  const result = await db.execute({
+    sql: `UPDATE smart_events
+          SET status = 'pending',
+              scheduled_start = NULL,
+              scheduled_end = NULL,
+              calendar_uid = NULL,
+              updated_at = datetime('now')
+          WHERE workspace = ? AND status IN ('scheduled', 'synced')`,
+    args: [workspace],
+  });
+  return result.rowsAffected ?? 0;
 }
 
 export async function markSmartEventScheduled(
   id: string,
-  start: Date,
-  end: Date
+  workspace: WorkspaceId,
+  start: string,
+  end: string,
+  calendarUid: string
 ): Promise<void> {
-  await getDb().execute({
-    sql: `UPDATE smart_events
-          SET status = 'scheduled', scheduled_start = ?, scheduled_end = ?, updated_at = datetime('now')
-          WHERE id = ?`,
-    args: [start.toISOString(), end.toISOString(), id],
+  await updateSmartEvent(id, workspace, {
+    status: 'scheduled',
+    scheduled_start: start,
+    scheduled_end: end,
+    calendar_uid: calendarUid,
   });
 }
 
 export async function markSmartEventSynced(
   id: string,
-  appleEventUid: string
+  workspace: WorkspaceId
 ): Promise<void> {
-  await getDb().execute({
-    sql: `UPDATE smart_events
-          SET status = 'synced', apple_event_uid = ?, updated_at = datetime('now')
-          WHERE id = ?`,
-    args: [appleEventUid, id],
-  });
+  await updateSmartEvent(id, workspace, { status: 'synced' });
 }
 
-export async function resetScheduledSmartEvents(): Promise<void> {
-  await getDb().execute(
-    `UPDATE smart_events
-     SET status = 'pending', scheduled_start = NULL, scheduled_end = NULL,
-         apple_event_uid = NULL, updated_at = datetime('now')
-     WHERE status IN ('scheduled', 'synced')`
-  );
+export async function getSettings(
+  workspace: WorkspaceId
+): Promise<AppSettings> {
+  const db = getClient();
+  const prefix = `${workspace}:`;
+  const result = await db.execute({
+    sql: 'SELECT key, value FROM settings WHERE key LIKE ?',
+    args: [`${prefix}%`],
+  });
+
+  const settings: Record<string, string> = {};
+  for (const row of result.rows) {
+    const key = String(row.key).slice(prefix.length);
+    settings[key] = String(row.value);
+  }
+
+  const defaults = workspaceDefaults(workspace);
+  return {
+    apple_calendar_name: settings.apple_calendar_name ?? '',
+    working_hours_start:
+      settings.working_hours_start ?? defaults.working_hours_start,
+    working_hours_end:
+      settings.working_hours_end ?? defaults.working_hours_end,
+    schedule_days_ahead: settings.schedule_days_ahead
+      ? parseInt(settings.schedule_days_ahead, 10)
+      : defaults.schedule_days_ahead,
+    min_gap_minutes: settings.min_gap_minutes
+      ? parseInt(settings.min_gap_minutes, 10)
+      : defaults.min_gap_minutes,
+    timezone: settings.timezone ?? defaults.timezone,
+    smart_calendar_name:
+      settings.smart_calendar_name ?? defaults.smart_calendar_name,
+  };
+}
+
+export async function updateSettings(
+  workspace: WorkspaceId,
+  updates: Partial<AppSettings>
+): Promise<AppSettings> {
+  const db = getClient();
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined) continue;
+    const storageKey = settingsStorageKey(workspace, key);
+    await db.execute({
+      sql: `INSERT INTO settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      args: [storageKey, String(value)],
+    });
+  }
+  return getSettings(workspace);
+}
+
+export async function applyDefaultWorkingHours(
+  workspace: WorkspaceId
+): Promise<void> {
+  const db = getClient();
+  const keys = ['working_hours_start', 'working_hours_end'] as const;
+  for (const key of keys) {
+    const storageKey = settingsStorageKey(workspace, key);
+    const existing = await db.execute({
+      sql: 'SELECT 1 FROM settings WHERE key = ?',
+      args: [storageKey],
+    });
+    if (existing.rows.length === 0) {
+      await db.execute({
+        sql: 'INSERT INTO settings (key, value) VALUES (?, ?)',
+        args: [storageKey, DEFAULT_SETTINGS[key]],
+      });
+    }
+  }
+}
+
+export async function closeDb(): Promise<void> {
+  if (client) {
+    client.close();
+    client = null;
+  }
 }

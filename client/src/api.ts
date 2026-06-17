@@ -6,6 +6,7 @@ import type {
   SmartEvent,
   SyncResult,
 } from './types';
+import type { WorkspaceId } from './workspaces';
 
 const API = '/api';
 
@@ -36,6 +37,68 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+function withWorkspace(path: string, workspace: WorkspaceId): string {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}workspace=${workspace}`;
+}
+
+export function createWorkspaceApi(workspace: WorkspaceId) {
+  return {
+    getSmartEvents: () =>
+      request<SmartEvent[]>(withWorkspace('/smart-events', workspace)),
+    createSmartEvent: (data: {
+      title: string;
+      description?: string;
+      duration_minutes?: number;
+      priority?: number;
+    }) =>
+      request<SmartEvent>('/smart-events', {
+        method: 'POST',
+        body: JSON.stringify({ ...data, workspace }),
+      }),
+    updateSmartEvent: (id: string, data: Partial<SmartEvent>) =>
+      request<SmartEvent>(`/smart-events/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ...data, workspace }),
+      }),
+    deleteSmartEvent: (id: string) =>
+      request<void>(withWorkspace(`/smart-events/${id}`, workspace), {
+        method: 'DELETE',
+      }),
+    reorderSmartEvents: (ids: string[]) =>
+      request<SmartEvent[]>('/smart-events/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ ids, workspace }),
+      }),
+    getSettings: () =>
+      request<AppSettings>(withWorkspace('/settings', workspace), {
+        cache: 'no-store',
+      }),
+    updateSettings: (data: Partial<PersistedAppSettings>) =>
+      request<AppSettings>('/settings', {
+        method: 'PUT',
+        cache: 'no-store',
+        body: JSON.stringify({ ...data, workspace }),
+      }),
+    runSync: (reschedule = false) =>
+      request<SyncResult>('/sync', {
+        method: 'POST',
+        body: JSON.stringify({ reschedule, workspace }),
+      }),
+    runRecall: () =>
+      request<RecallResult>('/sync/recall', {
+        method: 'POST',
+        body: JSON.stringify({ workspace }),
+      }),
+    previewBusyEvents: (refresh = false) => {
+      const query = refresh ? `?refresh=1&t=${Date.now()}` : '';
+      return request<{ busy_events: AppleEventPreview[]; fetched_at: string }>(
+        withWorkspace(`/sync/preview${query}`, workspace)
+      );
+    },
+  };
+}
+
 export const api = {
   getMe: () => request<{ username: string }>('/auth/me'),
   login: (username: string, password: string) =>
@@ -44,49 +107,6 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
-  getSmartEvents: () => request<SmartEvent[]>('/smart-events'),
-  createSmartEvent: (data: {
-    title: string;
-    description?: string;
-    duration_minutes?: number;
-    priority?: number;
-  }) =>
-    request<SmartEvent>('/smart-events', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  updateSmartEvent: (id: string, data: Partial<SmartEvent>) =>
-    request<SmartEvent>(`/smart-events/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
-  deleteSmartEvent: (id: string) =>
-    request<void>(`/smart-events/${id}`, { method: 'DELETE' }),
-  reorderSmartEvents: (ids: string[]) =>
-    request<SmartEvent[]>('/smart-events/reorder', {
-      method: 'PUT',
-      body: JSON.stringify({ ids }),
-    }),
-  getSettings: () =>
-    request<AppSettings>('/settings', { cache: 'no-store' }),
-  updateSettings: (data: Partial<PersistedAppSettings>) =>
-    request<AppSettings>('/settings', {
-      method: 'PUT',
-      cache: 'no-store',
-      body: JSON.stringify(data),
-    }),
-  listCalendars: () => request<{ name: string; url: string }[]>('/settings/calendars'),
-  runSync: (reschedule = false) =>
-    request<SyncResult>('/sync', {
-      method: 'POST',
-      body: JSON.stringify({ reschedule }),
-    }),
-  runRecall: () =>
-    request<RecallResult>('/sync/recall', {
-      method: 'POST',
-    }),
-  previewBusyEvents: (refresh = false) =>
-    request<{ busy_events: AppleEventPreview[]; fetched_at: string }>(
-      `/sync/preview${refresh ? `?refresh=1&t=${Date.now()}` : ''}`
-    ),
+  listCalendars: () =>
+    request<{ name: string; url: string }[]>('/settings/calendars'),
 };

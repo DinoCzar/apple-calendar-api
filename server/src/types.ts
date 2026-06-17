@@ -76,3 +76,6 @@ export interface RecallResult {
   smartEventsRecalled: number;
   errors: string[];
 }
+
+export type { WorkspaceId } from './workspace';
+export { WORKSPACE_IDS } from './workspace';

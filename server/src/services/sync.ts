@@ -18,6 +18,7 @@ import {
 } from './caldav';
 import { scheduleSmartEvents } from './scheduler';
 import type { AppSettings, RecallResult, SmartEvent, SyncResult } from '../types';
+import { WORKSPACE_IDS, type WorkspaceId } from '../workspace';
 
 const MAX_SCHEDULE_DAYS = 30;
 
@@ -33,6 +34,15 @@ function effectiveScheduleDays(
     MAX_SCHEDULE_DAYS,
     Math.max(configured, configured + Math.ceil(pendingCount / 2))
   );
+}
+
+async function outputCalendarNames(): Promise<string[]> {
+  const names = new Set<string>();
+  for (const workspace of WORKSPACE_IDS) {
+    const settings = await getSettings(workspace);
+    names.add(settings.smart_calendar_name);
+  }
+  return [...names];
 }
 
 async function pushSmartEventWithRetry(params: {
@@ -60,28 +70,28 @@ async function pushSmartEventWithRetry(params: {
   throw lastError ?? new Error('Failed to push smart event to Apple Calendar');
 }
 
-export async function runRecall(): Promise<RecallResult> {
+export async function runRecall(workspace: WorkspaceId): Promise<RecallResult> {
   const result: RecallResult = {
     calendarEventsRemoved: 0,
     smartEventsRecalled: 0,
     errors: [],
   };
 
-  const settings = await getSettings();
-  const scheduled = await getScheduledSmartEvents();
+  const settings = await getSettings(workspace);
+  const scheduled = await getScheduledSmartEvents(workspace);
   result.smartEventsRecalled = scheduled.length;
 
   try {
     result.calendarEventsRemoved = await clearSmartEventsCalendar(settings);
   } catch (err) {
     result.errors.push(
-      `Failed to remove events from Smart Events calendar: ${(err as Error).message}`
+      `Failed to remove events from ${settings.smart_calendar_name} calendar: ${(err as Error).message}`
     );
     return result;
   }
 
   try {
-    await resetScheduledSmartEvents();
+    await resetScheduledSmartEvents(workspace);
   } catch (err) {
     result.errors.push(
       `Failed to reset smart events in database: ${(err as Error).message}`
@@ -92,8 +102,9 @@ export async function runRecall(): Promise<RecallResult> {
 }
 
 export async function runFullSync(
-  options: { reschedule?: boolean } = {}
+  options: { workspace?: WorkspaceId; reschedule?: boolean } = {}
 ): Promise<SyncResult> {
+  const workspace = options.workspace ?? 'smart';
   const result: SyncResult = {
     appleEventsFetched: 0,
     smartEventsRecalled: 0,
@@ -105,11 +116,12 @@ export async function runFullSync(
     errors: [],
   };
 
-  const settings = await getSettings();
+  const settings = await getSettings(workspace);
   const shouldReschedule = options.reschedule !== false;
+  const excludeCalendarNames = await outputCalendarNames();
 
   if (shouldReschedule) {
-    const recallResult = await runRecall();
+    const recallResult = await runRecall(workspace);
     result.smartEventsRecalled = recallResult.smartEventsRecalled;
     result.smartEventsCleared = recallResult.calendarEventsRemoved;
     result.errors.push(...recallResult.errors);
@@ -117,12 +129,12 @@ export async function runFullSync(
       return result;
     }
 
-    await resetScheduledSmartEvents();
+    await resetScheduledSmartEvents(workspace);
   }
 
-  const pending = await getPendingSmartEvents();
+  const pending = await getPendingSmartEvents(workspace);
   const schedulableEvents = shouldReschedule
-    ? (await listSmartEvents()).filter((e) => e.status !== 'completed')
+    ? (await listSmartEvents(workspace)).filter((e) => e.status !== 'completed')
     : pending;
   const scheduleDays = effectiveScheduleDays(settings, schedulableEvents);
   const scheduleSettings: AppSettings = {
@@ -134,8 +146,9 @@ export async function runFullSync(
 
   let appleEvents = [];
   try {
-    appleEvents = await fetchAllBusyEvents(settings, rangeStart, rangeEnd, {
+    appleEvents = await fetchAllBusyEvents(scheduleSettings, rangeStart, rangeEnd, {
       refresh: true,
+      excludeCalendarNames,
     });
     result.appleEventsFetched = appleEvents.length;
   } catch (err) {
@@ -145,7 +158,9 @@ export async function runFullSync(
     return result;
   }
 
-  const alreadyScheduled = shouldReschedule ? [] : await getScheduledSmartEvents();
+  const alreadyScheduled = shouldReschedule
+    ? []
+    : await getScheduledSmartEvents(workspace);
 
   const { slots, unscheduled } = scheduleSmartEvents(
     schedulableEvents,
@@ -167,16 +182,22 @@ export async function runFullSync(
     const title = event?.title ?? slot.smartEventId;
 
     try {
-      await markSmartEventScheduled(slot.smartEventId, slot.start, slot.end);
+      const uid = generateEventUid();
+      await markSmartEventScheduled(
+        slot.smartEventId,
+        workspace,
+        slot.start.toISOString(),
+        slot.end.toISOString(),
+        uid
+      );
       result.smartEventsScheduled++;
 
-      const saved = await getSmartEvent(slot.smartEventId);
+      const saved = await getSmartEvent(slot.smartEventId, workspace);
       if (!saved?.scheduled_start || !saved.scheduled_end) {
         result.errors.push(`Failed to load schedule for "${title}"`);
         continue;
       }
 
-      const uid = generateEventUid();
       await pushSmartEventWithRetry({
         settings,
         uid,
@@ -185,7 +206,7 @@ export async function runFullSync(
         start: new Date(saved.scheduled_start),
         end: new Date(saved.scheduled_end),
       });
-      await markSmartEventSynced(saved.id, uid);
+      await markSmartEventSynced(slot.smartEventId, workspace);
       result.smartEventsSynced++;
     } catch (err) {
       result.errors.push(

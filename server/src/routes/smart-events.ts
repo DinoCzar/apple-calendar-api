@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import {
   createSmartEvent,
   deleteSmartEvent,
@@ -9,12 +8,14 @@ import {
   updateSmartEvent,
 } from '../db';
 import type { CreateSmartEventInput, UpdateSmartEventInput } from '../types';
+import { workspaceFromRequest } from '../workspace';
 
 const router = Router();
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const events = await listSmartEvents();
+    const workspace = workspaceFromRequest(req);
+    const events = await listSmartEvents(workspace);
     res.json(events);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -23,12 +24,13 @@ router.get('/', async (_req, res) => {
 
 router.put('/reorder', async (req, res) => {
   try {
+    const workspace = workspaceFromRequest(req);
     const ids = req.body?.ids;
     if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) {
       res.status(400).json({ error: 'ids must be an array of event IDs' });
       return;
     }
-    const events = await reorderSmartEvents(ids);
+    const events = await reorderSmartEvents(workspace, ids);
     res.json(events);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -37,7 +39,8 @@ router.put('/reorder', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const event = await getSmartEvent(req.params.id);
+    const workspace = workspaceFromRequest(req);
+    const event = await getSmartEvent(req.params.id, workspace);
     if (!event) {
       res.status(404).json({ error: 'Smart event not found' });
       return;
@@ -50,12 +53,13 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
+    const workspace = workspaceFromRequest(req);
     const input = req.body as CreateSmartEventInput;
     if (!input.title?.trim()) {
       res.status(400).json({ error: 'Title is required' });
       return;
     }
-    const event = await createSmartEvent(uuidv4(), input);
+    const event = await createSmartEvent(workspace, input);
     res.status(201).json(event);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -64,8 +68,9 @@ router.post('/', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
+    const workspace = workspaceFromRequest(req);
     const input = req.body as UpdateSmartEventInput;
-    const event = await updateSmartEvent(req.params.id, input);
+    const event = await updateSmartEvent(req.params.id, workspace, input);
     if (!event) {
       res.status(404).json({ error: 'Smart event not found' });
       return;
@@ -78,7 +83,8 @@ router.patch('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const deleted = await deleteSmartEvent(req.params.id);
+    const workspace = workspaceFromRequest(req);
+    const deleted = await deleteSmartEvent(req.params.id, workspace);
     if (!deleted) {
       res.status(404).json({ error: 'Smart event not found' });
       return;

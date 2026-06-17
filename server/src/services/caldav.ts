@@ -708,7 +708,7 @@ export async function fetchAllBusyEvents(
   settings: AppSettings,
   rangeStart: Date,
   rangeEnd: Date,
-  options: { refresh?: boolean } = {}
+  options: { refresh?: boolean; excludeCalendarNames?: string[] } = {}
 ): Promise<CalendarEvent[]> {
   if (options.refresh) {
     resetCaldavClient();
@@ -716,15 +716,16 @@ export async function fetchAllBusyEvents(
 
   const client = await getClient();
   const calendars = await client.fetchCalendars();
-  const smartCalendar = findCalendarByName(
-    calendars,
-    settings.smart_calendar_name
+  const excludeNames = new Set(
+    options.excludeCalendarNames ?? [settings.smart_calendar_name]
+  );
+  const excludeUrls = new Set(
+    calendars
+      .filter((cal) => excludeNames.has(calendarDisplayName(cal) || ''))
+      .map((cal) => cal.url)
   );
 
-  const busyCalendars = calendars.filter((cal) => {
-    if (!smartCalendar) return true;
-    return cal.url !== smartCalendar.url;
-  });
+  const busyCalendars = calendars.filter((cal) => !excludeUrls.has(cal.url));
 
   const eventMap = new Map<string, CalendarEvent>();
 
