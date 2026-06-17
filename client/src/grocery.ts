@@ -1,5 +1,96 @@
 import type { SmartEvent } from './types';
 
+export type GroceryListDays = 3 | 5 | 7;
+
+export const GROCERY_LIST_DAY_OPTIONS: GroceryListDays[] = [3, 5, 7];
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function formatEventDateTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+export function getScheduledGroceryEventsInDays(
+  events: SmartEvent[],
+  days: GroceryListDays,
+  now = new Date()
+): SmartEvent[] {
+  const rangeStart = startOfLocalDay(now);
+  const rangeEnd = addLocalDays(rangeStart, days);
+
+  return events
+    .filter((event) => {
+      if (!event.scheduled_start || event.status === 'completed') {
+        return false;
+      }
+
+      const scheduledAt = new Date(event.scheduled_start);
+      return scheduledAt >= rangeStart && scheduledAt < rangeEnd;
+    })
+    .sort((a, b) =>
+      a.scheduled_start!.localeCompare(b.scheduled_start!)
+    );
+}
+
+export function formatGroceryListText(
+  events: SmartEvent[],
+  days: GroceryListDays,
+  now = new Date()
+): string {
+  const scheduled = getScheduledGroceryEventsInDays(events, days, now);
+  const generatedOn = now.toLocaleString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  if (scheduled.length === 0) {
+    return `Grocery list — next ${days} days\nGenerated ${generatedOn}\n\nNo grocery events are scheduled in this window.`;
+  }
+
+  const sections = scheduled.map((event) => {
+    const lines = [formatEventDateTime(event.scheduled_start!) + ' — ' + event.title];
+
+    if (event.grocery_ingredients?.trim()) {
+      lines.push('Ingredients:');
+      lines.push(event.grocery_ingredients.trim());
+    }
+
+    if (event.grocery_sides?.trim()) {
+      lines.push('Sides:');
+      lines.push(event.grocery_sides.trim());
+    }
+
+    if (!event.grocery_ingredients?.trim() && !event.grocery_sides?.trim()) {
+      lines.push('(No ingredients or sides listed)');
+    }
+
+    return lines.join('\n');
+  });
+
+  return [
+    `Grocery list — next ${days} days`,
+    `Generated ${generatedOn}`,
+    '',
+    ...sections,
+  ].join('\n\n');
+}
+
 export interface GroceryTrait {
   label: string;
   value: string;
