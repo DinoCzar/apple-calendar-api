@@ -37,6 +37,9 @@ export interface UpdateSmartEventInput {
   duration_minutes?: number;
   priority?: number;
   status?: SmartEventStatus;
+  grocery_sides?: string | null;
+  grocery_recipe?: string | null;
+  grocery_ingredients?: string | null;
 }
 
 export interface AppSettings {

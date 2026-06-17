@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getGroceryTraits } from './grocery';
+import { getGroceryTraits, normalizeGroceryEventUpdate, toGroceryEventUpdate, type GroceryEventUpdate } from './grocery';
 import type { SmartEvent } from './types';
 import { formatRepeatDaysLabel } from './weekdays';
 
@@ -59,6 +59,10 @@ interface PriorityQueueProps {
   onReorder: (ids: string[]) => Promise<SmartEvent[]>;
   showMoveToBottom?: boolean;
   showGroceryTraits?: boolean;
+  onUpdateGroceryEvent?: (
+    id: string,
+    data: GroceryEventUpdate
+  ) => Promise<SmartEvent>;
 }
 
 export default function PriorityQueue({
@@ -70,11 +74,14 @@ export default function PriorityQueue({
   onReorder,
   showMoveToBottom = false,
   showGroceryTraits = false,
+  onUpdateGroceryEvent,
 }: PriorityQueueProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [touchPreview, setTouchPreview] = useState<SmartEvent[] | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const isMobile = useIsMobileLayout();
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -161,7 +168,7 @@ export default function PriorityQueue({
   }
 
   function moveToBottom(eventId: string) {
-    if (saving) return;
+    if (saving || savingEdit) return;
 
     const current = reorderableRef.current;
     const fromIndex = current.findIndex((e) => e.id === eventId);
@@ -169,6 +176,27 @@ export default function PriorityQueue({
     if (fromIndex === -1 || fromIndex === lastIndex) return;
 
     commitReorderedList(reorder(current, fromIndex, lastIndex));
+  }
+
+  async function saveGroceryEdit(eventId: string, draft: GroceryEventUpdate) {
+    if (!onUpdateGroceryEvent) return;
+
+    const normalized = normalizeGroceryEventUpdate(draft);
+    if (!normalized.title) {
+      onError('Title is required');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const updated = await onUpdateGroceryEvent(eventId, normalized);
+      onChange(events.map((event) => (event.id === eventId ? updated : event)));
+      setEditingId(null);
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   function handleDrop(targetId: string) {
@@ -287,15 +315,20 @@ export default function PriorityQueue({
             ref={listRef}
             className={`event-list priority-list ${draggedId ? 'priority-list-dragging' : ''}`}
           >
-            {displayList.map((event, index) => (
+            {displayList.map((event, index) => {
+              const isEditing = editingId === event.id;
+
+              return (
               <div
                 key={event.id}
                 data-event-id={event.id}
                 className={`event-item event-item-draggable ${
                   draggedId === event.id ? 'dragging' : ''
-                } ${dragOverId === event.id && draggedId !== event.id ? 'drag-over' : ''}`}
-                draggable={!saving && !isMobile}
-                title={isMobile ? undefined : 'Drag to reorder'}
+                } ${dragOverId === event.id && draggedId !== event.id ? 'drag-over' : ''}${
+                  isEditing ? ' event-item-editing' : ''
+                }`}
+                draggable={!saving && !savingEdit && !isMobile && !isEditing}
+                title={isMobile || isEditing ? undefined : 'Drag to reorder'}
                 onDragStart={(e) => handleDragStart(event.id, e)}
                 onDragEnd={() => {
                   setDraggedId(null);
@@ -313,30 +346,49 @@ export default function PriorityQueue({
                   handleDrop(event.id);
                 }}
               >
-                <div className="event-item-content">
-                  <div className="drag-handle" aria-hidden="true">
-                    <span className="priority-rank">{index + 1}</span>
-                    <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
-                      <circle cx="2" cy="2" r="1.5" />
-                      <circle cx="8" cy="2" r="1.5" />
-                      <circle cx="2" cy="8" r="1.5" />
-                      <circle cx="8" cy="8" r="1.5" />
-                      <circle cx="2" cy="14" r="1.5" />
-                      <circle cx="8" cy="14" r="1.5" />
-                    </svg>
-                  </div>
-                  <EventBody event={event} showGroceryTraits={showGroceryTraits} />
-                  <EventActions
-                    event={event}
-                    onDelete={onDelete}
-                    onComplete={onComplete}
-                    showMoveToBottom={showMoveToBottom}
-                    moveToBottomDisabled={
-                      saving || index === displayList.length - 1
-                    }
-                    onMoveToBottom={() => moveToBottom(event.id)}
-                  />
+                <div
+                  className={`event-item-content${
+                    isEditing ? ' event-item-content-editing' : ''
+                  }`}
+                >
+                  {isEditing ? (
+                    <GroceryEventEditForm
+                      event={event}
+                      saving={savingEdit}
+                      onCancel={() => setEditingId(null)}
+                      onSave={(draft) => saveGroceryEdit(event.id, draft)}
+                    />
+                  ) : (
+                    <>
+                      <div className="drag-handle" aria-hidden="true">
+                        <span className="priority-rank">{index + 1}</span>
+                        <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
+                          <circle cx="2" cy="2" r="1.5" />
+                          <circle cx="8" cy="2" r="1.5" />
+                          <circle cx="2" cy="8" r="1.5" />
+                          <circle cx="8" cy="8" r="1.5" />
+                          <circle cx="2" cy="14" r="1.5" />
+                          <circle cx="8" cy="14" r="1.5" />
+                        </svg>
+                      </div>
+                      <EventBody event={event} showGroceryTraits={showGroceryTraits} />
+                      <EventActions
+                        event={event}
+                        onDelete={onDelete}
+                        onComplete={onComplete}
+                        showMoveToBottom={showMoveToBottom}
+                        moveToBottomDisabled={
+                          saving || savingEdit || index === displayList.length - 1
+                        }
+                        onMoveToBottom={() => moveToBottom(event.id)}
+                        showGroceryEdit={Boolean(onUpdateGroceryEvent)}
+                        editDisabled={saving || savingEdit || editingId !== null}
+                        onEdit={() => setEditingId(event.id)}
+                      />
+                    </>
+                  )}
                 </div>
+                {!isEditing && (
                 <div className="mobile-reorder-bar">
                   <div
                     className="mobile-drag-tab"
@@ -371,8 +423,10 @@ export default function PriorityQueue({
                     </button>
                   </div>
                 </div>
+                )}
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
       )}
@@ -381,12 +435,28 @@ export default function PriorityQueue({
         <div className={`event-list ${reorderable.length > 0 ? 'scheduled-list' : ''}`}>
           {completed.map((event) => (
             <div key={event.id} className="event-item">
-              <EventBody event={event} showGroceryTraits={showGroceryTraits} />
-              <EventActions
-                event={event}
-                onDelete={onDelete}
-                onComplete={onComplete}
-              />
+              <div className="event-item-content event-item-content-static">
+                {editingId === event.id ? (
+                  <GroceryEventEditForm
+                    event={event}
+                    saving={savingEdit}
+                    onCancel={() => setEditingId(null)}
+                    onSave={(draft) => saveGroceryEdit(event.id, draft)}
+                  />
+                ) : (
+                  <>
+                    <EventBody event={event} showGroceryTraits={showGroceryTraits} />
+                    <EventActions
+                      event={event}
+                      onDelete={onDelete}
+                      onComplete={onComplete}
+                      showGroceryEdit={Boolean(onUpdateGroceryEvent)}
+                      editDisabled={saving || savingEdit || editingId !== null}
+                      onEdit={() => setEditingId(event.id)}
+                    />
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -444,6 +514,97 @@ function EventBody({
   );
 }
 
+function GroceryEventEditForm({
+  event,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  event: SmartEvent;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (draft: GroceryEventUpdate) => void;
+}) {
+  const [draft, setDraft] = useState(() => toGroceryEventUpdate(event));
+
+  function updateDraft(partial: Partial<GroceryEventUpdate>) {
+    setDraft((current) => ({ ...current, ...partial }));
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    onSave(draft);
+  }
+
+  return (
+    <form className="event-edit-form" onSubmit={handleSubmit}>
+      <div>
+        <label htmlFor={`edit-title-${event.id}`}>Title</label>
+        <input
+          id={`edit-title-${event.id}`}
+          value={draft.title}
+          onChange={(e) => updateDraft({ title: e.target.value })}
+          required
+        />
+      </div>
+      <div>
+        <label htmlFor={`edit-ingredients-${event.id}`}>Ingredients</label>
+        <textarea
+          id={`edit-ingredients-${event.id}`}
+          value={draft.grocery_ingredients ?? ''}
+          onChange={(e) => updateDraft({ grocery_ingredients: e.target.value || null })}
+          rows={2}
+        />
+      </div>
+      <div>
+        <label htmlFor={`edit-recipe-${event.id}`}>Recipe</label>
+        <textarea
+          id={`edit-recipe-${event.id}`}
+          value={draft.grocery_recipe ?? ''}
+          onChange={(e) => updateDraft({ grocery_recipe: e.target.value || null })}
+          rows={2}
+        />
+      </div>
+      <div>
+        <label htmlFor={`edit-sides-${event.id}`}>Sides</label>
+        <textarea
+          id={`edit-sides-${event.id}`}
+          value={draft.grocery_sides ?? ''}
+          onChange={(e) => updateDraft({ grocery_sides: e.target.value || null })}
+          rows={2}
+        />
+      </div>
+      <div>
+        <label htmlFor={`edit-duration-${event.id}`}>Duration (minutes)</label>
+        <input
+          id={`edit-duration-${event.id}`}
+          type="number"
+          min={15}
+          step={15}
+          value={draft.duration_minutes}
+          onChange={(e) =>
+            updateDraft({ duration_minutes: Number(e.target.value) })
+          }
+          required
+        />
+      </div>
+      <div className="form-actions">
+        <button type="submit" className="btn-primary" disabled={saving || !draft.title.trim()}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={saving}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function EventActions({
   event,
   onDelete,
@@ -451,6 +612,9 @@ function EventActions({
   showMoveToBottom = false,
   moveToBottomDisabled = false,
   onMoveToBottom,
+  showGroceryEdit = false,
+  editDisabled = false,
+  onEdit,
 }: {
   event: SmartEvent;
   onDelete: (id: string) => void;
@@ -458,6 +622,9 @@ function EventActions({
   showMoveToBottom?: boolean;
   moveToBottomDisabled?: boolean;
   onMoveToBottom?: () => void;
+  showGroceryEdit?: boolean;
+  editDisabled?: boolean;
+  onEdit?: () => void;
 }) {
   const labels: Record<SmartEvent['status'], string> = {
     pending: 'Pending',
@@ -471,6 +638,17 @@ function EventActions({
       <span className={`badge badge-${event.status}`}>{labels[event.status]}</span>
       {event.status !== 'completed' && (
         <>
+          {showGroceryEdit && (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+              disabled={editDisabled}
+              onClick={onEdit}
+            >
+              Edit
+            </button>
+          )}
           {showMoveToBottom && (
             <button
               type="button"
@@ -490,6 +668,17 @@ function EventActions({
             Done
           </button>
         </>
+      )}
+      {event.status === 'completed' && showGroceryEdit && (
+        <button
+          type="button"
+          className="btn-secondary"
+          style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+          disabled={editDisabled}
+          onClick={onEdit}
+        >
+          Edit
+        </button>
       )}
       <button className="btn-danger" onClick={() => onDelete(event.id)}>
         Delete

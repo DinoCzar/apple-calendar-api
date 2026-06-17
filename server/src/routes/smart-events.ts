@@ -100,9 +100,45 @@ function normalizeOptionalText(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function stripGroceryFields(input: CreateSmartEventInput): CreateSmartEventInput {
+function stripGroceryCreateFields(
+  input: CreateSmartEventInput
+): CreateSmartEventInput {
   const { grocery_sides, grocery_recipe, grocery_ingredients, ...rest } = input;
   return rest;
+}
+
+function stripGroceryUpdateFields(
+  input: UpdateSmartEventInput
+): UpdateSmartEventInput {
+  const { grocery_sides, grocery_recipe, grocery_ingredients, ...rest } = input;
+  return rest;
+}
+
+function normalizeGroceryUpdate(
+  workspace: WorkspaceId,
+  input: UpdateSmartEventInput
+): UpdateSmartEventInput {
+  if (workspace !== 'grocery') {
+    return stripGroceryUpdateFields(input);
+  }
+
+  const normalized = { ...input };
+
+  if (input.title !== undefined) {
+    normalized.title = input.title.trim();
+  }
+
+  if ('grocery_sides' in input) {
+    normalized.grocery_sides = normalizeOptionalText(input.grocery_sides);
+  }
+  if ('grocery_recipe' in input) {
+    normalized.grocery_recipe = normalizeOptionalText(input.grocery_recipe);
+  }
+  if ('grocery_ingredients' in input) {
+    normalized.grocery_ingredients = normalizeOptionalText(input.grocery_ingredients);
+  }
+
+  return normalized;
 }
 
 router.post('/', async (req, res) => {
@@ -122,7 +158,7 @@ router.post('/', async (req, res) => {
           normalizeOptionalText(input.grocery_ingredients) ?? undefined,
       };
     } else {
-      input = stripGroceryFields(input);
+      input = stripGroceryCreateFields(input);
     }
     const repeatError = validateRepeatDays(workspace, input.repeat_days_of_week);
     if (repeatError) {
@@ -144,7 +180,14 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const workspace = workspaceFromRequest(req);
-    const input = req.body as UpdateSmartEventInput;
+    const input = normalizeGroceryUpdate(
+      workspace,
+      req.body as UpdateSmartEventInput
+    );
+    if (input.title !== undefined && !input.title.trim()) {
+      res.status(400).json({ error: 'Title is required' });
+      return;
+    }
     const event = await updateSmartEvent(req.params.id, workspace, input);
     if (!event) {
       res.status(404).json({ error: 'Smart event not found' });

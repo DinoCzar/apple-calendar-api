@@ -403,6 +403,31 @@ label {
   white-space: pre-wrap;
 }
 
+.event-item-content-editing,
+.event-item-content-static {
+  width: 100%;
+}
+
+.event-item-editing {
+  cursor: default;
+}
+
+.event-edit-form {
+  display: grid;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.event-edit-form label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.event-edit-form input,
+.event-edit-form textarea {
+  width: 100%;
+}
+
 .event-item-main {
   flex: 1;
   min-width: 0;

@@ -172,6 +172,19 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
     }
   }
 
+  async function handleUpdateGroceryEvent(
+    id: string,
+    data: {
+      title: string;
+      duration_minutes: number;
+      grocery_sides: string | null;
+      grocery_recipe: string | null;
+      grocery_ingredients: string | null;
+    }
+  ) {
+    return workspaceApi.updateSmartEvent(id, data);
+  }
+
   async function handleSync() {
     setSyncing(true);
     setError(null);
@@ -473,6 +486,9 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                 onReorder={(ids) => workspaceApi.reorderSmartEvents(ids)}
                 showMoveToBottom={workspace === 'grocery'}
                 showGroceryTraits={workspace === 'grocery'}
+                onUpdateGroceryEvent={
+                  isGroceryWorkspace ? handleUpdateGroceryEvent : undefined
+                }
               />
             )}
           </div>
