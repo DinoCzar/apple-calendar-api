@@ -66,6 +66,9 @@ function rowToSmartEvent(row: Record<string, unknown>): SmartEvent {
       : null,
     scheduled_end: row.scheduled_end ? String(row.scheduled_end) : null,
     apple_event_uid: uid,
+    repeat_days_of_week: row.repeat_days_of_week
+      ? parseScheduleDaysOfWeek(String(row.repeat_days_of_week))
+      : null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -110,6 +113,16 @@ async function migrateSmartEventsSchema(db: Client): Promise<void> {
       );
     } catch {
       // Best-effort copy from legacy column name
+    }
+  }
+
+  if (!columns.has('repeat_days_of_week')) {
+    try {
+      await db.execute(
+        `ALTER TABLE smart_events ADD COLUMN repeat_days_of_week TEXT`
+      );
+    } catch {
+      // Column already exists
     }
   }
 }
@@ -220,6 +233,7 @@ export async function createSmartEvent(
     description?: string;
     duration_minutes?: number;
     priority?: number;
+    repeat_days_of_week?: number[] | null;
   }
 ): Promise<SmartEvent> {
   const db = getClient();
@@ -236,8 +250,8 @@ export async function createSmartEvent(
 
   await db.execute({
     sql: `INSERT INTO smart_events
-          (id, title, description, duration_minutes, priority, status, workspace, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+          (id, title, description, duration_minutes, priority, status, workspace, repeat_days_of_week, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
     args: [
       id,
       data.title,
@@ -245,6 +259,9 @@ export async function createSmartEvent(
       data.duration_minutes ?? 30,
       priority,
       workspace,
+      data.repeat_days_of_week?.length
+        ? formatScheduleDaysOfWeek(data.repeat_days_of_week)
+        : null,
       now,
       now,
     ],

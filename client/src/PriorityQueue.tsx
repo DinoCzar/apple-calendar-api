@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SmartEvent } from './types';
+import { formatRepeatDaysLabel } from './weekdays';
 
 function reorder<T>(list: T[], fromIndex: number, toIndex: number): T[] {
   const result = [...list];
@@ -383,6 +384,9 @@ function EventBody({ event }: { event: SmartEvent }) {
       <div className="event-meta">
         <span>{event.duration_minutes} min</span>
         <span>Priority {event.priority}</span>
+        {event.repeat_days_of_week && event.repeat_days_of_week.length > 0 && (
+          <span>Repeats weekly: {formatRepeatDaysLabel(event.repeat_days_of_week)}</span>
+        )}
         {event.scheduled_start && event.scheduled_end && (
           <span>
             {formatDateTime(event.scheduled_start)} →{' '}

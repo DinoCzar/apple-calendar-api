@@ -9,3 +9,10 @@ export const SCHEDULE_WEEKDAYS = [
 ] as const;
 
 export const ALL_SCHEDULE_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+
+export function formatRepeatDaysLabel(days: number[]): string {
+  return days
+    .map((day) => SCHEDULE_WEEKDAYS.find((entry) => entry.value === day)?.label)
+    .filter(Boolean)
+    .join(', ');
+}

@@ -47,3 +47,20 @@ export function isSchedulableDay(day: Date, settings: AppSettings): boolean {
   if (!allowed || allowed.length === 0) return true;
   return allowed.includes(getWeekdayInTimezone(day, settings.timezone));
 }
+
+const ICAL_BYDAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const;
+
+export function toIcalByDay(days: number[]): string {
+  return [...new Set(days.filter((day) => day >= 0 && day <= 6))]
+    .sort((a, b) => a - b)
+    .map((day) => ICAL_BYDAY[day])
+    .join(',');
+}
+
+export function formatRepeatDaysLabel(days: number[]): string {
+  const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return [...new Set(days.filter((day) => day >= 0 && day <= 6))]
+    .sort((a, b) => a - b)
+    .map((day) => labels[day])
+    .join(', ');
+}

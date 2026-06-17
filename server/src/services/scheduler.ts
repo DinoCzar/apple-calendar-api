@@ -9,7 +9,10 @@ import {
   getScheduleEarliestInstant,
   getScheduleRangeStart,
 } from './caldav';
-import { isSchedulableDay } from './schedule-days';
+import {
+  getWeekdayInTimezone,
+  isSchedulableDay,
+} from './schedule-days';
 
 function partsInTimezone(date: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -216,6 +219,124 @@ function canPlaceWithoutOverlap(
   });
 }
 
+function applyClockTime(fromDay: Date, reference: Date, timezone: string): Date {
+  const { hour, minute } = partsInTimezone(reference, timezone);
+  const dateStr = formatDateInTimezone(fromDay, timezone);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return makeDateInTimezone(year, month, day, hour, minute, timezone);
+}
+
+function recurringPatternIsFree(
+  anchorStart: Date,
+  durationMs: number,
+  repeatDays: number[],
+  rangeStart: Date,
+  rangeEnd: Date,
+  allBusy: TimeSlot[],
+  placedSlots: TimeSlot[],
+  settings: AppSettings,
+  gapMs: number
+): boolean {
+  const timezone = settings.timezone;
+  let day = startOfDayInTimezone(rangeStart, timezone);
+
+  while (day <= rangeEnd) {
+    const weekday = getWeekdayInTimezone(day, timezone);
+    if (repeatDays.includes(weekday)) {
+      const start = applyClockTime(day, anchorStart, timezone);
+      const end = new Date(start.getTime() + durationMs);
+      const dayWorkStart = parseTimeOnDate(
+        day,
+        settings.working_hours_start,
+        timezone
+      );
+      const dayWorkEnd = parseTimeOnDate(
+        day,
+        settings.working_hours_end,
+        timezone
+      );
+
+      if (start < dayWorkStart || end > dayWorkEnd) {
+        return false;
+      }
+
+      const candidate = { start, end };
+      if (!canPlaceWithoutOverlap(candidate, [...allBusy, ...placedSlots], gapMs)) {
+        return false;
+      }
+    }
+
+    day = addDaysInTimezone(day, 1, timezone);
+  }
+
+  return true;
+}
+
+function tryPlaceRecurringEvent(
+  event: SmartEvent,
+  rangeStart: Date,
+  rangeEnd: Date,
+  now: Date,
+  allBusy: TimeSlot[],
+  placedSlots: TimeSlot[],
+  busyByDay: Map<string, TimeSlot[]>,
+  settings: AppSettings,
+  gapMs: number
+): TimeSlot | null {
+  const repeatDays = event.repeat_days_of_week ?? [];
+  if (repeatDays.length === 0) return null;
+
+  const durationMs = event.duration_minutes * 60 * 1000;
+
+  for (let d = 0; d < settings.schedule_days_ahead; d++) {
+    const day = addDaysInTimezone(rangeStart, d, settings.timezone);
+    if (!isSchedulableDay(day, settings)) continue;
+    if (!repeatDays.includes(getWeekdayInTimezone(day, settings.timezone))) {
+      continue;
+    }
+
+    const dayKey = formatDateInTimezone(day, settings.timezone);
+    const dayBusy = [...(busyByDay.get(dayKey) || []), ...placedSlots];
+    const freeSlots = findFreeSlotsForDay(day, settings, dayBusy);
+    const earliest = getScheduleEarliestInstant(settings, day, now);
+
+    for (const free of freeSlots) {
+      let slotCursor = new Date(Math.max(free.start.getTime(), earliest.getTime()));
+      if (
+        formatDateInTimezone(day, settings.timezone) ===
+        formatDateInTimezone(now, settings.timezone)
+      ) {
+        slotCursor = new Date(
+          Math.max(slotCursor.getTime(), earliest.getTime() + gapMs)
+        );
+      }
+
+      while (slotCursor.getTime() + durationMs <= free.end.getTime()) {
+        const candidateEnd = new Date(slotCursor.getTime() + durationMs);
+        if (
+          recurringPatternIsFree(
+            slotCursor,
+            durationMs,
+            repeatDays,
+            rangeStart,
+            rangeEnd,
+            allBusy,
+            placedSlots,
+            settings,
+            gapMs
+          )
+        ) {
+          return { start: new Date(slotCursor), end: candidateEnd };
+        }
+
+        slotCursor = new Date(slotCursor.getTime() + 15 * 60 * 1000);
+      }
+    }
+  }
+
+  return null;
+}
+
 export interface ScheduleResult {
   slots: ScheduledSlot[];
   unscheduled: { id: string; title: string }[];
@@ -237,6 +358,11 @@ export function scheduleSmartEvents(
 
   const now = new Date();
   const rangeStart = getScheduleRangeStart(settings, now);
+  const rangeEnd = addDaysInTimezone(
+    rangeStart,
+    settings.schedule_days_ahead,
+    settings.timezone
+  );
   const gapMs = settings.min_gap_minutes * 60 * 1000;
 
   const allBusy: TimeSlot[] = [
@@ -262,6 +388,37 @@ export function scheduleSmartEvents(
 
   while (pending.length > 0) {
     const pendingBefore = pending.length;
+    const event = pending[0];
+
+    if (event.repeat_days_of_week?.length) {
+      const slot = tryPlaceRecurringEvent(
+        event,
+        rangeStart,
+        rangeEnd,
+        now,
+        allBusy,
+        placedSlots,
+        busyByDay,
+        settings,
+        gapMs
+      );
+
+      if (slot) {
+        scheduled.push({
+          smartEventId: event.id,
+          start: slot.start,
+          end: slot.end,
+        });
+        placedSlots.push(slot);
+        pending.shift();
+      } else if (pending.length === pendingBefore) {
+        const skipped = pending.shift();
+        if (skipped) {
+          unscheduled.push({ id: skipped.id, title: skipped.title });
+        }
+      }
+      continue;
+    }
 
     for (let d = 0; d < settings.schedule_days_ahead; d++) {
       const day = addDaysInTimezone(rangeStart, d, settings.timezone);

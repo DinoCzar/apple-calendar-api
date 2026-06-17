@@ -8,9 +8,32 @@ import {
   updateSmartEvent,
 } from '../db';
 import type { CreateSmartEventInput, UpdateSmartEventInput } from '../types';
-import { workspaceFromRequest } from '../workspace';
+import { workspaceFromRequest, type WorkspaceId } from '../workspace';
 
 const router = Router();
+
+function validateRepeatDays(
+  workspace: WorkspaceId,
+  repeatDays: unknown
+): string | null {
+  if (workspace !== 'recurring') {
+    return null;
+  }
+
+  if (!Array.isArray(repeatDays) || repeatDays.length === 0) {
+    return 'Select at least one repeat day for recurring events';
+  }
+
+  if (
+    !repeatDays.every(
+      (day) => typeof day === 'number' && Number.isInteger(day) && day >= 0 && day <= 6
+    )
+  ) {
+    return 'Repeat days must be valid weekdays';
+  }
+
+  return null;
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -57,6 +80,11 @@ router.post('/', async (req, res) => {
     const input = req.body as CreateSmartEventInput;
     if (!input.title?.trim()) {
       res.status(400).json({ error: 'Title is required' });
+      return;
+    }
+    const repeatError = validateRepeatDays(workspace, input.repeat_days_of_week);
+    if (repeatError) {
+      res.status(400).json({ error: repeatError });
       return;
     }
     const event = await createSmartEvent(workspace, input);
