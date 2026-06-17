@@ -52,6 +52,7 @@ async function pushSmartEventWithRetry(params: {
   description?: string | null;
   start: Date;
   end: Date;
+  repeatDaysOfWeek?: number[] | null;
 }): Promise<void> {
   let lastError: Error | null = null;
 
@@ -203,6 +204,7 @@ export async function runFullSync(
         description: saved.description,
         start: new Date(saved.scheduled_start),
         end: new Date(saved.scheduled_end),
+        repeatDaysOfWeek: saved.repeat_days_of_week,
       });
       await markSmartEventSynced(slot.smartEventId, workspace);
       result.smartEventsSynced++;

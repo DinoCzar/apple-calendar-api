@@ -3,7 +3,7 @@ import { createDAVClient, DAVCalendar } from 'tsdav';
 import { v4 as uuidv4 } from 'uuid';
 import { config, isICloudConfigured } from '../config';
 import type { AppSettings, CalendarEvent } from '../types';
-import { isSchedulableDay } from './schedule-days';
+import { isSchedulableDay, toIcalByDay } from './schedule-days';
 import { mapWithConcurrency } from '../utils/async';
 
 interface ParsedVEvent {
@@ -726,6 +726,7 @@ function buildIcsEvent(params: {
   description?: string;
   start: Date;
   end: Date;
+  repeatDaysOfWeek?: number[];
 }): string {
   const lines = [
     'BEGIN:VCALENDAR',
@@ -741,6 +742,12 @@ function buildIcsEvent(params: {
 
   if (params.description) {
     lines.push(`DESCRIPTION:${params.description.replace(/\n/g, '\\n')}`);
+  }
+
+  if (params.repeatDaysOfWeek?.length) {
+    lines.push(
+      `RRULE:FREQ=WEEKLY;BYDAY=${toIcalByDay(params.repeatDaysOfWeek)}`
+    );
   }
 
   lines.push('END:VEVENT', 'END:VCALENDAR');
@@ -920,6 +927,7 @@ export async function pushSmartEventToCalendar(params: {
   description?: string | null;
   start: Date;
   end: Date;
+  repeatDaysOfWeek?: number[] | null;
 }): Promise<string> {
   const client = await getClient();
   const smartCalendar = await requireSmartCalendar(client, params.settings);
@@ -929,6 +937,7 @@ export async function pushSmartEventToCalendar(params: {
     description: params.description ?? undefined,
     start: params.start,
     end: params.end,
+    repeatDaysOfWeek: params.repeatDaysOfWeek ?? undefined,
   });
 
   await client.createCalendarObject({

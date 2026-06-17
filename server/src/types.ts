@@ -8,6 +8,7 @@ export interface SmartEvent {
   scheduled_start: string | null;
   scheduled_end: string | null;
   apple_event_uid: string | null;
+  repeat_days_of_week: number[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -19,6 +20,7 @@ export interface CreateSmartEventInput {
   description?: string;
   duration_minutes?: number;
   priority?: number;
+  repeat_days_of_week?: number[];
 }
 
 export interface UpdateSmartEventInput {

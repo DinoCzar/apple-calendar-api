@@ -4,7 +4,7 @@ import PriorityQueue from './PriorityQueue';
 import type { AppSettings, SmartEvent, SyncResult } from './types';
 import { toPersistedSettings } from './types';
 import { getWorkspaceConfig, type WorkspaceId } from './workspaces';
-import { ALL_SCHEDULE_WEEKDAYS, SCHEDULE_WEEKDAYS } from './weekdays';
+import { ALL_SCHEDULE_WEEKDAYS, SCHEDULE_WEEKDAYS, formatRepeatDaysLabel } from './weekdays';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -45,6 +45,9 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [duration, setDuration] = useState(30);
+  const [createRepeatDays, setCreateRepeatDays] = useState<number[]>([
+    1, 2, 3, 4, 5,
+  ]);
   const [creating, setCreating] = useState(false);
 
   const [settingsDraft, setSettingsDraft] = useState<Partial<AppSettings>>({});
@@ -93,9 +96,15 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
     }
   }
 
+  const isRecurringWorkspace = workspace === 'recurring';
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
+    if (isRecurringWorkspace && createRepeatDays.length === 0) {
+      setError('Select at least one day for the event to repeat on.');
+      return;
+    }
     setCreating(true);
     setError(null);
     try {
@@ -105,10 +114,16 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
         description: description.trim() || undefined,
         duration_minutes: duration,
         priority: pendingCount + 1,
+        ...(isRecurringWorkspace
+          ? { repeat_days_of_week: createRepeatDays }
+          : {}),
       });
       setTitle('');
       setDescription('');
       setDuration(30);
+      if (isRecurringWorkspace) {
+        setCreateRepeatDays([1, 2, 3, 4, 5]);
+      }
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -206,13 +221,23 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
     });
   }
 
+  function toggleCreateRepeatDay(day: number) {
+    setCreateRepeatDays((current) => {
+      const next = current.includes(day)
+        ? current.filter((value) => value !== day)
+        : [...current, day].sort((a, b) => a - b);
+      return next;
+    });
+  }
+
   return (
     <>
       <header className="header workspace-header">
         <div>
           <p className="workspace-description">
-            Drag to set priority, then sync — recalls old events, refreshes iCloud
-            busy times, and pushes a new schedule to <strong>{calendarName}</strong>.
+            {isRecurringWorkspace
+              ? `Add weekly repeating events, set priority, then sync to push them to ${calendarName}.`
+              : `Drag to set priority, then sync — recalls old events, refreshes iCloud busy times, and pushes a new schedule to ${calendarName}.`}
           </p>
           {settings && (
             <div className="connection-status">
@@ -302,6 +327,35 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                   placeholder="Notes or details"
                 />
               </div>
+              {isRecurringWorkspace && (
+                <div>
+                  <label>Repeat weekly on</label>
+                  <div
+                    className="weekday-picker"
+                    role="group"
+                    aria-label="Repeat days"
+                  >
+                    {SCHEDULE_WEEKDAYS.map(({ value, label }) => {
+                      const active = createRepeatDays.includes(value);
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`weekday-toggle${active ? ' active' : ''}`}
+                          aria-pressed={active}
+                          onClick={() => toggleCreateRepeatDay(value)}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="settings-hint">
+                    Sync creates one weekly recurring event at the same time on each
+                    selected day.
+                  </p>
+                </div>
+              )}
               <div>
                 <label htmlFor={`duration-${workspace}`}>Duration (minutes)</label>
                 <input
@@ -317,7 +371,11 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                 <button
                   type="submit"
                   className="btn-primary"
-                  disabled={creating || !title.trim()}
+                  disabled={
+                    creating ||
+                    !title.trim() ||
+                    (isRecurringWorkspace && createRepeatDays.length === 0)
+                  }
                 >
                   {creating ? 'Adding…' : config.addButtonLabel}
                 </button>
