@@ -40,6 +40,8 @@ export interface UpdateSmartEventInput {
   grocery_sides?: string | null;
   grocery_recipe?: string | null;
   grocery_ingredients?: string | null;
+  repeat_days_of_week?: number[];
+  repeat_time_of_day?: string;
 }
 
 export interface AppSettings {

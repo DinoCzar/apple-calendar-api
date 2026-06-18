@@ -6,7 +6,12 @@ import {
 } from './event-edit';
 import { normalizeGroceryEventUpdate, toGroceryEventUpdate, type GroceryEventUpdate } from './grocery';
 import type { SmartEvent } from './types';
-import { formatRepeatDaysLabel } from './weekdays';
+import {
+  normalizeRecurringEventUpdate,
+  toRecurringEventUpdate,
+  type RecurringEventUpdate,
+} from './recurring-edit';
+import { formatRepeatDaysLabel, SCHEDULE_WEEKDAYS } from './weekdays';
 
 function reorder<T>(list: T[], fromIndex: number, toIndex: number): T[] {
   const result = [...list];
@@ -63,7 +68,7 @@ interface PriorityQueueProps {
   onComplete: (id: string) => void;
   onReorder: (ids: string[]) => Promise<SmartEvent[]>;
   showMoveToBottom?: boolean;
-  eventEditMode?: 'grocery' | 'standard';
+  eventEditMode?: 'grocery' | 'standard' | 'recurring';
   onUpdateGroceryEvent?: (
     id: string,
     data: GroceryEventUpdate
@@ -71,6 +76,10 @@ interface PriorityQueueProps {
   onUpdateStandardEvent?: (
     id: string,
     data: StandardEventUpdate
+  ) => Promise<SmartEvent>;
+  onUpdateRecurringEvent?: (
+    id: string,
+    data: RecurringEventUpdate
   ) => Promise<SmartEvent>;
 }
 
@@ -85,6 +94,7 @@ export default function PriorityQueue({
   eventEditMode,
   onUpdateGroceryEvent,
   onUpdateStandardEvent,
+  onUpdateRecurringEvent,
 }: PriorityQueueProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -235,6 +245,31 @@ export default function PriorityQueue({
     }
   }
 
+  async function saveRecurringEdit(eventId: string, draft: RecurringEventUpdate) {
+    if (!onUpdateRecurringEvent) return;
+
+    const normalized = normalizeRecurringEventUpdate(draft);
+    if (!normalized.title) {
+      onError('Title is required');
+      return;
+    }
+    if (normalized.repeat_days_of_week.length === 0) {
+      onError('Select at least one day for the event to repeat on.');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const updated = await onUpdateRecurringEvent(eventId, normalized);
+      onChange(events.map((event) => (event.id === eventId ? updated : event)));
+      setEditingId(null);
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   function renderEventEditForm(event: SmartEvent) {
     if (eventEditMode === 'grocery' && onUpdateGroceryEvent) {
       return (
@@ -254,6 +289,17 @@ export default function PriorityQueue({
           saving={savingEdit}
           onCancel={() => setEditingId(null)}
           onSave={(draft) => saveStandardEdit(event.id, draft)}
+        />
+      );
+    }
+
+    if (eventEditMode === 'recurring' && onUpdateRecurringEvent) {
+      return (
+        <RecurringEventEditForm
+          event={event}
+          saving={savingEdit}
+          onCancel={() => setEditingId(null)}
+          onSave={(draft) => saveRecurringEdit(event.id, draft)}
         />
       );
     }
@@ -547,6 +593,123 @@ function EventBody({ event }: { event: SmartEvent }) {
   );
 }
 
+function RecurringEventEditForm({
+  event,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  event: SmartEvent;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (draft: RecurringEventUpdate) => void;
+}) {
+  const [draft, setDraft] = useState(() => toRecurringEventUpdate(event));
+
+  function updateDraft(partial: Partial<RecurringEventUpdate>) {
+    setDraft((current) => ({ ...current, ...partial }));
+  }
+
+  function toggleRepeatDay(day: number) {
+    setDraft((current) => {
+      const next = current.repeat_days_of_week.includes(day)
+        ? current.repeat_days_of_week.filter((value) => value !== day)
+        : [...current.repeat_days_of_week, day].sort((a, b) => a - b);
+      return { ...current, repeat_days_of_week: next };
+    });
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    onSave(draft);
+  }
+
+  return (
+    <form className="event-edit-form" onSubmit={handleSubmit}>
+      <div>
+        <label htmlFor={`edit-title-${event.id}`}>Title</label>
+        <input
+          id={`edit-title-${event.id}`}
+          value={draft.title}
+          onChange={(e) => updateDraft({ title: e.target.value })}
+          required
+        />
+      </div>
+      <div>
+        <label htmlFor={`edit-description-${event.id}`}>Description (optional)</label>
+        <textarea
+          id={`edit-description-${event.id}`}
+          value={draft.description ?? ''}
+          onChange={(e) => updateDraft({ description: e.target.value || null })}
+          rows={2}
+        />
+      </div>
+      <div>
+        <label>Repeat weekly on</label>
+        <div className="weekday-picker" role="group" aria-label="Repeat days">
+          {SCHEDULE_WEEKDAYS.map(({ value, label }) => {
+            const active = draft.repeat_days_of_week.includes(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                className={`weekday-toggle${active ? ' active' : ''}`}
+                aria-pressed={active}
+                onClick={() => toggleRepeatDay(value)}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <label htmlFor={`edit-repeat-time-${event.id}`}>Time of day</label>
+        <input
+          id={`edit-repeat-time-${event.id}`}
+          type="time"
+          value={draft.repeat_time_of_day}
+          onChange={(e) => updateDraft({ repeat_time_of_day: e.target.value })}
+          required
+        />
+      </div>
+      <div>
+        <label htmlFor={`edit-duration-${event.id}`}>Duration (minutes)</label>
+        <input
+          id={`edit-duration-${event.id}`}
+          type="number"
+          min={15}
+          step={15}
+          value={draft.duration_minutes}
+          onChange={(e) =>
+            updateDraft({ duration_minutes: Number(e.target.value) })
+          }
+          required
+        />
+      </div>
+      <div className="form-actions">
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={
+            saving || !draft.title.trim() || draft.repeat_days_of_week.length === 0
+          }
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={saving}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function StandardEventEditForm({
   event,
   saving,
@@ -728,7 +891,7 @@ function EventActions({
   showMoveToBottom?: boolean;
   moveToBottomDisabled?: boolean;
   onMoveToBottom?: () => void;
-  eventEditMode?: 'grocery' | 'standard';
+  eventEditMode?: 'grocery' | 'standard' | 'recurring';
   editDisabled?: boolean;
   onEditToggle?: () => void;
 }) {
@@ -756,6 +919,17 @@ function EventActions({
             </button>
           )}
           {eventEditMode === 'standard' && (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+              disabled={editDisabled}
+              onClick={onEditToggle}
+            >
+              Edit
+            </button>
+          )}
+          {eventEditMode === 'recurring' && (
             <button
               type="button"
               className="btn-secondary"
@@ -798,6 +972,17 @@ function EventActions({
         </button>
       )}
       {event.status === 'completed' && eventEditMode === 'standard' && (
+        <button
+          type="button"
+          className="btn-secondary"
+          style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+          disabled={editDisabled}
+          onClick={onEditToggle}
+        >
+          Edit
+        </button>
+      )}
+      {event.status === 'completed' && eventEditMode === 'recurring' && (
         <button
           type="button"
           className="btn-secondary"

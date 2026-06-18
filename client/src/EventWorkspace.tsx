@@ -210,6 +210,19 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
     return workspaceApi.updateSmartEvent(id, data);
   }
 
+  async function handleUpdateRecurringEvent(
+    id: string,
+    data: {
+      title: string;
+      description: string | null;
+      duration_minutes: number;
+      repeat_days_of_week: number[];
+      repeat_time_of_day: string;
+    }
+  ) {
+    return workspaceApi.updateSmartEvent(id, data);
+  }
+
   async function handleSync() {
     setSyncing(true);
     setError(null);
@@ -550,15 +563,20 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
                 eventEditMode={
                   isGroceryWorkspace
                     ? 'grocery'
-                    : isStandardEditableWorkspace
-                      ? 'standard'
-                      : undefined
+                    : isRecurringWorkspace
+                      ? 'recurring'
+                      : isStandardEditableWorkspace
+                        ? 'standard'
+                        : undefined
                 }
                 onUpdateGroceryEvent={
                   isGroceryWorkspace ? handleUpdateGroceryEvent : undefined
                 }
                 onUpdateStandardEvent={
                   isStandardEditableWorkspace ? handleUpdateStandardEvent : undefined
+                }
+                onUpdateRecurringEvent={
+                  isRecurringWorkspace ? handleUpdateRecurringEvent : undefined
                 }
               />
             )}
