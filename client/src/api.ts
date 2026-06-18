@@ -3,6 +3,7 @@ import type {
   AppleEventPreview,
   PersistedAppSettings,
   SmartEvent,
+  SyncAllProgressItem,
   SyncAllResult,
   SyncResult,
 } from './types';
@@ -111,12 +112,24 @@ export function createWorkspaceApi(workspace: WorkspaceId) {
   };
 }
 
-export async function runSyncAllWorkspaces(): Promise<SyncAllResult> {
+export async function runSyncAllWorkspaces(
+  onProgress?: (items: SyncAllProgressItem[]) => void
+): Promise<SyncAllResult> {
+  const items: SyncAllProgressItem[] = WORKSPACE_IDS.map((workspace) => ({
+    workspace,
+    status: 'pending',
+  }));
   const workspaces: SyncAllResult['workspaces'] = [];
 
-  for (const workspace of WORKSPACE_IDS) {
+  const emit = () => onProgress?.(items.map((item) => ({ ...item })));
+
+  emit();
+
+  for (let index = 0; index < WORKSPACE_IDS.length; index++) {
+    const workspace = WORKSPACE_IDS[index];
     const workspaceApi = createWorkspaceApi(workspace);
     const settings = await workspaceApi.getSettings();
+
     if (!settings.icloud_configured) {
       throw new Error(
         'iCloud not configured. Set ICLOUD_USERNAME and ICLOUD_APP_PASSWORD.'
@@ -125,10 +138,33 @@ export async function runSyncAllWorkspaces(): Promise<SyncAllResult> {
 
     const events = await workspaceApi.getSmartEvents();
     const syncableCount = events.filter((event) => event.status !== 'completed').length;
-    if (syncableCount === 0) continue;
+    if (syncableCount === 0) {
+      items[index] = { workspace, status: 'skipped' };
+      emit();
+      continue;
+    }
 
-    const result = await workspaceApi.runSync(true);
-    workspaces.push({ workspace, result });
+    items[index] = { workspace, status: 'syncing' };
+    emit();
+
+    try {
+      const result = await workspaceApi.runSync(true);
+      items[index] = {
+        workspace,
+        status: 'synced',
+        syncedCount: result.smartEventsSynced,
+        result,
+      };
+      workspaces.push({ workspace, result });
+    } catch (err) {
+      items[index] = {
+        workspace,
+        status: 'error',
+        error: (err as Error).message,
+      };
+    }
+
+    emit();
   }
 
   return { workspaces };

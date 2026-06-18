@@ -2,8 +2,42 @@ import { useEffect, useState } from 'react';
 import { api, AuthError, createWorkspaceApi, runSyncAllWorkspaces } from './api';
 import EventWorkspace from './EventWorkspace';
 import Login from './Login';
-import type { SyncAllResult } from './types';
+import type { SyncAllProgressItem } from './types';
 import { getWorkspaceConfig, WORKSPACES, type WorkspaceId } from './workspaces';
+
+function syncAllProgressLabel(item: SyncAllProgressItem): string {
+  const label = getWorkspaceConfig(item.workspace).label;
+
+  switch (item.status) {
+    case 'pending':
+      return `${label} — waiting…`;
+    case 'syncing':
+      return `${label} — syncing to Apple Calendar…`;
+    case 'synced':
+      return `${label} — synced ${item.syncedCount ?? 0} event${
+        item.syncedCount === 1 ? '' : 's'
+      }`;
+    case 'skipped':
+      return `${label} — skipped (no events to sync)`;
+    case 'error':
+      return `${label} — ${item.error ?? 'sync failed'}`;
+  }
+}
+
+function syncAllProgressAlertClass(
+  items: SyncAllProgressItem[],
+  syncing: boolean
+): string {
+  if (syncing) return 'alert-sync-progress';
+
+  const hasError = items.some((item) => item.status === 'error');
+  const hasSynced = items.some((item) => item.status === 'synced');
+
+  if (hasError && hasSynced) return 'alert-warning';
+  if (hasError) return 'alert-error';
+  if (hasSynced) return 'alert-success';
+  return 'alert-sync-progress';
+}
 
 export default function App() {
   const [user, setUser] = useState<string | null>(null);
@@ -12,7 +46,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [icloudConfigured, setIcloudConfigured] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
-  const [syncAllResult, setSyncAllResult] = useState<SyncAllResult | null>(null);
+  const [syncAllProgress, setSyncAllProgress] = useState<SyncAllProgressItem[] | null>(
+    null
+  );
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
 
   useEffect(() => {
@@ -43,22 +79,22 @@ export default function App() {
     await api.logout();
     setUser(null);
     setError(null);
-    setSyncAllResult(null);
+    setSyncAllProgress(null);
   }
 
   async function handleSyncAll() {
     setSyncingAll(true);
     setError(null);
-    setSyncAllResult(null);
+    setSyncAllProgress(null);
     try {
-      const result = await runSyncAllWorkspaces();
-      setSyncAllResult(result);
+      const result = await runSyncAllWorkspaces(setSyncAllProgress);
       setWorkspaceRefreshToken((token) => token + 1);
       if (result.workspaces.length === 0) {
         setError('Nothing to sync — every workspace only has completed events.');
       }
     } catch (err) {
       setError((err as Error).message);
+      setSyncAllProgress(null);
     } finally {
       setSyncingAll(false);
     }
@@ -77,12 +113,13 @@ export default function App() {
   }
 
   const activeConfig = WORKSPACES.find((w) => w.id === activeWorkspace)!;
-  const syncAllErrors = syncAllResult?.workspaces.flatMap(({ workspace, result }) =>
-    result.errors.map((message) => ({
-      workspace,
-      message,
-    }))
-  );
+  const syncAllWarnings =
+    syncAllProgress?.flatMap((item) =>
+      (item.result?.errors ?? []).map((message) => ({
+        workspace: item.workspace,
+        message,
+      }))
+    ) ?? [];
 
   return (
     <div className="app">
@@ -124,22 +161,25 @@ export default function App() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {syncAllResult && syncAllResult.workspaces.length > 0 && (
-        <div className="alert alert-success">
-          Synced{' '}
-          {syncAllResult.workspaces.map(({ workspace, result }, index) => {
-            const label = getWorkspaceConfig(workspace).label;
-            return (
-              <span key={workspace}>
-                {index > 0 ? ', ' : ''}
-                <strong>{label}</strong> ({result.smartEventsSynced} synced)
-              </span>
-            );
-          })}
-          .
-          {syncAllErrors && syncAllErrors.length > 0 && (
+      {syncAllProgress && (
+        <div
+          className={`alert ${syncAllProgressAlertClass(syncAllProgress, syncingAll)}`}
+          aria-live="polite"
+        >
+          <strong>{syncingAll ? 'Syncing all workspaces…' : 'Sync all complete'}</strong>
+          <ul className="sync-all-progress-list">
+            {syncAllProgress.map((item) => (
+              <li
+                key={item.workspace}
+                className={`sync-all-progress-item sync-all-progress-${item.status}`}
+              >
+                {syncAllProgressLabel(item)}
+              </li>
+            ))}
+          </ul>
+          {!syncingAll && syncAllWarnings.length > 0 && (
             <div className="sync-result" style={{ marginTop: '0.5rem' }}>
-              {syncAllErrors.map(({ workspace, message }, index) => (
+              {syncAllWarnings.map(({ workspace, message }, index) => (
                 <div key={`${workspace}-${index}`}>
                   {getWorkspaceConfig(workspace).label}: {message}
                 </div>
