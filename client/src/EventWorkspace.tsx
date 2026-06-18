@@ -230,7 +230,9 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
     try {
       const result = await workspaceApi.runSync(true);
       setSyncResult(result);
-      setBusyPreviewRefresh((n) => n + 1);
+      if (!isRecurringWorkspace) {
+        setBusyPreviewRefresh((n) => n + 1);
+      }
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -373,14 +375,19 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
           {syncResult.smartEventsCleared > 0 && (
             <>
               Recalled <strong>{syncResult.smartEventsCleared}</strong> old event
-              {syncResult.smartEventsCleared === 1 ? '' : 's'},{' '}
+              {syncResult.smartEventsCleared === 1 ? '' : 's'}
+              {isRecurringWorkspace ? ', and ' : ', '}
             </>
           )}
-          refreshed <strong>{syncResult.appleEventsFetched}</strong> busy block
-          {syncResult.appleEventsFetched === 1 ? '' : 's'} from iCloud, and synced{' '}
-          <strong>{syncResult.smartEventsSynced}</strong> to{' '}
+          {!isRecurringWorkspace && (
+            <>
+              refreshed <strong>{syncResult.appleEventsFetched}</strong> busy block
+              {syncResult.appleEventsFetched === 1 ? '' : 's'} from iCloud, and{' '}
+            </>
+          )}
+          synced <strong>{syncResult.smartEventsSynced}</strong> to{' '}
           <strong>{calendarName}</strong>.
-          {syncResult.smartEventsUnscheduled > 0 && (
+          {!isRecurringWorkspace && syncResult.smartEventsUnscheduled > 0 && (
             <>
               {' '}
               <strong>{syncResult.smartEventsUnscheduled}</strong> could not fit in your
@@ -587,10 +594,12 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <h2>Settings</h2>
             <form onSubmit={handleSaveSettings} className="settings-form">
-              <p className="settings-hint" style={{ marginBottom: '0.75rem' }}>
-                Busy times are read from <strong>all iCloud calendars</strong> except
-                the output calendars for each events page.
-              </p>
+              {!isRecurringWorkspace && (
+                <p className="settings-hint" style={{ marginBottom: '0.75rem' }}>
+                  Busy times are read from <strong>all iCloud calendars</strong> except
+                  the output calendars for each events page.
+                </p>
+              )}
               <div>
                 <label>Output calendar</label>
                 {icloudCalendars.length > 0 ? (
@@ -793,11 +802,13 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
             </form>
           </div>
 
-          <BusyTimesPreview
-            configured={settings?.icloud_configured ?? false}
-            refreshToken={busyPreviewRefresh}
-            workspaceApi={workspaceApi}
-          />
+          {!isRecurringWorkspace && (
+            <BusyTimesPreview
+              configured={settings?.icloud_configured ?? false}
+              refreshToken={busyPreviewRefresh}
+              workspaceApi={workspaceApi}
+            />
+          )}
         </aside>
       </div>
     </>
