@@ -1,3 +1,5 @@
+import type { WorkspaceId } from './workspaces';
+
 export interface SmartEvent {
   id: string;
   title: string;
@@ -76,6 +78,15 @@ export interface SyncResult {
   smartEventsUnscheduled: number;
   unscheduled_titles: string[];
   errors: string[];
+}
+
+export interface SyncAllWorkspaceResult {
+  workspace: WorkspaceId;
+  result: SyncResult;
+}
+
+export interface SyncAllResult {
+  workspaces: SyncAllWorkspaceResult[];
 }
 
 export interface RecallResult {

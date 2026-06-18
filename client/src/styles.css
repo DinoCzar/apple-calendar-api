@@ -132,6 +132,13 @@ label {
   gap: 0.75rem;
 }
 
+.app-top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .app-title {
   font-size: 1.75rem;
   font-weight: 700;
