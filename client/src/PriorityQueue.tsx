@@ -101,6 +101,7 @@ export default function PriorityQueue({
   const [touchPreview, setTouchPreview] = useState<SmartEvent[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const isMobile = useIsMobileLayout();
 
@@ -198,9 +199,20 @@ export default function PriorityQueue({
     commitReorderedList(reorder(current, fromIndex, lastIndex));
   }
 
+  function toggleExpand(eventId: string) {
+    if (savingEdit) return;
+    setExpandedId((current) => (current === eventId ? null : eventId));
+  }
+
   function toggleEdit(eventId: string) {
     if (savingEdit) return;
-    setEditingId((current) => (current === eventId ? null : eventId));
+    setEditingId((current) => {
+      const next = current === eventId ? null : eventId;
+      if (next) {
+        setExpandedId(eventId);
+      }
+      return next;
+    });
   }
 
   async function saveGroceryEdit(eventId: string, draft: GroceryEventUpdate) {
@@ -330,7 +342,7 @@ export default function PriorityQueue({
     }
 
     const target = e.target as HTMLElement;
-    if (target.closest('button, .event-actions')) {
+    if (target.closest('.event-actions, .event-item-title-toggle')) {
       e.preventDefault();
       return;
     }
@@ -423,7 +435,7 @@ export default function PriorityQueue({
         <div className="priority-section">
           <p className="priority-hint">
             <span className="priority-hint-desktop">
-              Drag any event to reorder priority — top slots fill first on sync.
+              Click an event for details — drag to reorder priority (top slots fill first on sync).
             </span>
             <span className="priority-hint-mobile">
               Use the arrows or drag the tab below each event to reorder.
@@ -436,6 +448,7 @@ export default function PriorityQueue({
           >
             {displayList.map((event, index) => {
               const isEditing = editingId === event.id;
+              const isExpanded = isEditing || expandedId === event.id;
 
               return (
               <div
@@ -445,9 +458,9 @@ export default function PriorityQueue({
                   draggedId === event.id ? 'dragging' : ''
                 } ${dragOverId === event.id && draggedId !== event.id ? 'drag-over' : ''}${
                   isEditing ? ' event-item-editing' : ''
-                }`}
+                }${isExpanded ? ' event-item-expanded' : ' event-item-collapsed'}`}
                 draggable={!saving && !savingEdit && !isMobile && !isEditing}
-                title={isMobile || isEditing ? undefined : 'Drag to reorder'}
+                title={isMobile || isEditing ? undefined : isExpanded ? 'Drag to reorder' : undefined}
                 onDragStart={(e) => handleDragStart(event.id, e)}
                 onDragEnd={() => {
                   setDraggedId(null);
@@ -472,7 +485,7 @@ export default function PriorityQueue({
                 >
                   {isEditing ? (
                     renderEventEditForm(event)
-                  ) : (
+                  ) : isExpanded ? (
                     <>
                       <div className="drag-handle" aria-hidden="true">
                         <span className="priority-rank">{index + 1}</span>
@@ -485,7 +498,7 @@ export default function PriorityQueue({
                           <circle cx="8" cy="14" r="1.5" />
                         </svg>
                       </div>
-                      <EventBody event={event} />
+                      <EventBody event={event} onTitleClick={() => toggleExpand(event.id)} />
                       <EventActions
                         {...eventActionProps(event)}
                         showMoveToBottom={showMoveToBottom}
@@ -495,9 +508,14 @@ export default function PriorityQueue({
                         onMoveToBottom={() => moveToBottom(event.id)}
                       />
                     </>
+                  ) : (
+                    <EventSummary
+                      title={event.title}
+                      onActivate={() => toggleExpand(event.id)}
+                    />
                   )}
                 </div>
-                {!isEditing && (
+                {isExpanded && !isEditing && (
                 <div className="mobile-reorder-bar">
                   <div
                     className="mobile-drag-tab"
@@ -542,30 +560,94 @@ export default function PriorityQueue({
 
       {completed.length > 0 && (
         <div className={`event-list ${reorderable.length > 0 ? 'scheduled-list' : ''}`}>
-          {completed.map((event) => (
-            <div key={event.id} className="event-item">
+          {completed.map((event) => {
+            const isEditing = editingId === event.id;
+            const isExpanded = isEditing || expandedId === event.id;
+
+            return (
+            <div
+              key={event.id}
+              className={`event-item${
+                isExpanded ? ' event-item-expanded' : ' event-item-collapsed'
+              }${isEditing ? ' event-item-editing' : ''}`}
+            >
               <div className="event-item-content event-item-content-static">
-                {editingId === event.id ? (
+                {isEditing ? (
                   renderEventEditForm(event)
-                ) : (
+                ) : isExpanded ? (
                   <>
-                    <EventBody event={event} />
+                    <EventBody event={event} onTitleClick={() => toggleExpand(event.id)} />
                     <EventActions {...eventActionProps(event)} />
                   </>
+                ) : (
+                  <EventSummary
+                    title={event.title}
+                    onActivate={() => toggleExpand(event.id)}
+                  />
                 )}
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </>
   );
 }
 
-function EventBody({ event }: { event: SmartEvent }) {
+function EventSummary({
+  title,
+  onActivate,
+}: {
+  title: string;
+  onActivate: () => void;
+}) {
+  return (
+    <div
+      className="event-item-summary"
+      role="button"
+      tabIndex={0}
+      aria-expanded="false"
+      onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate();
+        }
+      }}
+    >
+      {title}
+    </div>
+  );
+}
+
+function EventBody({
+  event,
+  onTitleClick,
+}: {
+  event: SmartEvent;
+  onTitleClick?: () => void;
+}) {
   return (
     <div className="event-item-main">
-      <h3>{event.title}</h3>
+      <h3
+        className={onTitleClick ? 'event-item-title-toggle' : undefined}
+        onClick={onTitleClick}
+        onKeyDown={
+          onTitleClick
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onTitleClick();
+                }
+              }
+            : undefined
+        }
+        role={onTitleClick ? 'button' : undefined}
+        tabIndex={onTitleClick ? 0 : undefined}
+      >
+        {event.title}
+      </h3>
       {event.description && (
         <p className="event-description">{event.description}</p>
       )}

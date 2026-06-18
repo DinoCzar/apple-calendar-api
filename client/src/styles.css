@@ -366,6 +366,32 @@ label {
   border-top: 1px solid var(--border);
 }
 
+.event-item-collapsed .event-item-content {
+  padding: 0.65rem 1rem;
+}
+
+.event-item-summary {
+  flex: 1;
+  width: 100%;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.event-item-summary:hover,
+.event-item-title-toggle:hover {
+  color: var(--accent);
+}
+
+.event-item-title-toggle {
+  cursor: pointer;
+}
+
+.event-item-main h3.event-item-title-toggle {
+  margin-bottom: 0.25rem;
+}
+
 .event-item {
   background: var(--surface-2);
   border: 1px solid var(--border);
