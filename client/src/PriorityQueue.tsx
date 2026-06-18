@@ -111,6 +111,7 @@ export default function PriorityQueue({
   const touchStartOrderRef = useRef<string[]>([]);
   const touchPreviewRef = useRef<SmartEvent[] | null>(null);
   const draggedIdRef = useRef<string | null>(null);
+  const suppressExpandRef = useRef(false);
 
   const reorderable = sortByPriority(
     events.filter((e) => e.status !== 'completed')
@@ -148,7 +149,26 @@ export default function PriorityQueue({
     setTouchPreview(null);
     touchPreviewRef.current = null;
     touchStartOrderRef.current = [];
-    document.body.classList.remove('mobile-drag-active');
+    document.body.classList.remove('priority-drag-active');
+  }
+
+  function beginPointerDrag(eventId: string) {
+    if (saving || savingEdit || editingId !== null) return;
+
+    const snapshot = [...reorderableRef.current];
+    touchStartOrderRef.current = snapshot.map((item) => item.id);
+    touchPreviewRef.current = snapshot;
+    setDraggedId(eventId);
+    setTouchPreview(snapshot);
+    document.body.classList.add('priority-drag-active');
+  }
+
+  function handleReorderPointerDown(eventId: string, e: React.PointerEvent) {
+    if (saving || savingEdit || editingId !== null) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    beginPointerDrag(eventId);
   }
 
   function commitReorderedList(reordered: SmartEvent[]) {
@@ -158,34 +178,6 @@ export default function PriorityQueue({
     }));
     onChange([...withPriority, ...completedRef.current]);
     persistOrder(withPriority);
-  }
-
-  function applyReorder(fromId: string, toId: string) {
-    if (fromId === toId) {
-      clearTouchDrag();
-      return;
-    }
-
-    const current = reorderableRef.current;
-    const fromIndex = current.findIndex((e) => e.id === fromId);
-    const toIndex = current.findIndex((e) => e.id === toId);
-    if (fromIndex === -1 || toIndex === -1) {
-      clearTouchDrag();
-      return;
-    }
-
-    commitReorderedList(reorder(current, fromIndex, toIndex));
-  }
-
-  function moveByOffset(eventId: string, offset: number) {
-    if (saving) return;
-
-    const current = reorderableRef.current;
-    const fromIndex = current.findIndex((e) => e.id === eventId);
-    const toIndex = fromIndex + offset;
-    if (fromIndex === -1 || toIndex < 0 || toIndex >= current.length) return;
-
-    commitReorderedList(reorder(current, fromIndex, toIndex));
   }
 
   function moveToBottom(eventId: string) {
@@ -200,7 +192,7 @@ export default function PriorityQueue({
   }
 
   function toggleExpand(eventId: string) {
-    if (savingEdit) return;
+    if (savingEdit || suppressExpandRef.current) return;
     setExpandedId((current) => (current === eventId ? null : eventId));
   }
 
@@ -330,52 +322,18 @@ export default function PriorityQueue({
     };
   }
 
-  function handleDrop(targetId: string) {
-    if (!draggedId) return;
-    applyReorder(draggedId, targetId);
-  }
-
-  function handleDragStart(eventId: string, e: React.DragEvent) {
-    if (saving || isMobile) {
-      e.preventDefault();
-      return;
-    }
-
-    const target = e.target as HTMLElement;
-    if (target.closest('.event-actions, .event-item-title-toggle')) {
-      e.preventDefault();
-      return;
-    }
-
-    setDraggedId(eventId);
-    e.dataTransfer.effectAllowed = 'move';
-  }
-
-  function handleTouchStart(eventId: string, e: React.TouchEvent) {
-    if (saving) return;
-
-    e.preventDefault();
-    const snapshot = [...reorderableRef.current];
-    touchStartOrderRef.current = snapshot.map((item) => item.id);
-    touchPreviewRef.current = snapshot;
-    setDraggedId(eventId);
-    setTouchPreview(snapshot);
-    document.body.classList.add('mobile-drag-active');
-  }
-
   useEffect(() => {
-    if (!draggedId || !isMobile || !touchPreview) return;
+    if (!draggedId || !touchPreview) return;
 
-    function onTouchMove(e: TouchEvent) {
+    function onPointerMove(e: PointerEvent) {
       e.preventDefault();
-      const touch = e.touches[0];
       const activeId = draggedIdRef.current;
       const current = touchPreviewRef.current;
-      if (!touch || !activeId || !current || !listRef.current) return;
+      if (!activeId || !current || !listRef.current) return;
 
       const fromIndex = current.findIndex((item) => item.id === activeId);
       const toIndex = getTargetIndexFromY(
-        touch.clientY,
+        e.clientY,
         current.map((item) => item.id),
         listRef.current
       );
@@ -388,19 +346,23 @@ export default function PriorityQueue({
       setDragOverId(next[toIndex]?.id ?? null);
     }
 
-    function endTouchDrag() {
+    function endPointerDrag() {
       const current = touchPreviewRef.current;
       const startOrder = touchStartOrderRef.current.join(',');
 
       if (current) {
         const endOrder = current.map((item) => item.id).join(',');
         if (endOrder !== startOrder) {
+          suppressExpandRef.current = true;
           const withPriority = current.map((item, i) => ({
             ...item,
             priority: i + 1,
           }));
           onChange([...withPriority, ...completedRef.current]);
           persistOrder(withPriority);
+          window.setTimeout(() => {
+            suppressExpandRef.current = false;
+          }, 0);
           return;
         }
       }
@@ -408,17 +370,17 @@ export default function PriorityQueue({
       clearTouchDrag();
     }
 
-    document.addEventListener('touchmove', onTouchMove, { passive: false });
-    document.addEventListener('touchend', endTouchDrag);
-    document.addEventListener('touchcancel', endTouchDrag);
+    document.addEventListener('pointermove', onPointerMove, { passive: false });
+    document.addEventListener('pointerup', endPointerDrag);
+    document.addEventListener('pointercancel', endPointerDrag);
 
     return () => {
-      document.removeEventListener('touchmove', onTouchMove);
-      document.removeEventListener('touchend', endTouchDrag);
-      document.removeEventListener('touchcancel', endTouchDrag);
-      document.body.classList.remove('mobile-drag-active');
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', endPointerDrag);
+      document.removeEventListener('pointercancel', endPointerDrag);
+      document.body.classList.remove('priority-drag-active');
     };
-  }, [draggedId, isMobile, touchPreview]);
+  }, [draggedId, touchPreview]);
 
   if (reorderable.length === 0 && completed.length === 0) {
     return (
@@ -435,10 +397,10 @@ export default function PriorityQueue({
         <div className="priority-section">
           <p className="priority-hint">
             <span className="priority-hint-desktop">
-              Click an event for details — drag to reorder priority (top slots fill first on sync).
+              Drag the grip to reorder — click the name for details (top slots fill first on sync).
             </span>
             <span className="priority-hint-mobile">
-              Use the arrows or drag the tab below each event to reorder.
+              Hold and drag the grip, or long-press an event to move it — tap the name for details.
             </span>
             {saving && <span className="priority-saving"> Saving…</span>}
           </p>
@@ -449,6 +411,7 @@ export default function PriorityQueue({
             {displayList.map((event, index) => {
               const isEditing = editingId === event.id;
               const isExpanded = isEditing || expandedId === event.id;
+              const reorderDisabled = saving || savingEdit || isEditing;
 
               return (
               <div
@@ -459,45 +422,26 @@ export default function PriorityQueue({
                 } ${dragOverId === event.id && draggedId !== event.id ? 'drag-over' : ''}${
                   isEditing ? ' event-item-editing' : ''
                 }${isExpanded ? ' event-item-expanded' : ' event-item-collapsed'}`}
-                draggable={!saving && !savingEdit && !isMobile && !isEditing}
-                title={isMobile || isEditing ? undefined : isExpanded ? 'Drag to reorder' : undefined}
-                onDragStart={(e) => handleDragStart(event.id, e)}
-                onDragEnd={() => {
-                  setDraggedId(null);
-                  setDragOverId(null);
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOverId(event.id);
-                }}
-                onDragLeave={() => {
-                  if (dragOverId === event.id) setDragOverId(null);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  handleDrop(event.id);
-                }}
               >
                 <div
                   className={`event-item-content${
                     isEditing ? ' event-item-content-editing' : ''
-                  }`}
+                  }${!isExpanded && !isEditing ? ' event-item-content-collapsed' : ''}`}
                 >
+                  {!isEditing && (
+                    <EventReorderHandle
+                      eventId={event.id}
+                      title={event.title}
+                      index={index}
+                      disabled={reorderDisabled}
+                      isDragging={draggedId === event.id}
+                      onDragStart={handleReorderPointerDown}
+                    />
+                  )}
                   {isEditing ? (
                     renderEventEditForm(event)
                   ) : isExpanded ? (
                     <>
-                      <div className="drag-handle" aria-hidden="true">
-                        <span className="priority-rank">{index + 1}</span>
-                        <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
-                          <circle cx="2" cy="2" r="1.5" />
-                          <circle cx="8" cy="2" r="1.5" />
-                          <circle cx="2" cy="8" r="1.5" />
-                          <circle cx="8" cy="8" r="1.5" />
-                          <circle cx="2" cy="14" r="1.5" />
-                          <circle cx="8" cy="14" r="1.5" />
-                        </svg>
-                      </div>
                       <EventBody event={event} onTitleClick={() => toggleExpand(event.id)} />
                       <EventActions
                         {...eventActionProps(event)}
@@ -511,46 +455,12 @@ export default function PriorityQueue({
                   ) : (
                     <EventSummary
                       title={event.title}
+                      enableLongPressDrag={isMobile}
                       onActivate={() => toggleExpand(event.id)}
+                      onLongPressDrag={() => beginPointerDrag(event.id)}
                     />
                   )}
                 </div>
-                {isExpanded && !isEditing && (
-                <div className="mobile-reorder-bar">
-                  <div
-                    className="mobile-drag-tab"
-                    aria-label={`Drag to reorder ${event.title}`}
-                    onTouchStart={(e) => handleTouchStart(event.id, e)}
-                  >
-                    <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor" aria-hidden="true">
-                      <rect x="0" y="0" width="18" height="2.5" rx="1.25" />
-                      <rect x="0" y="4.75" width="18" height="2.5" rx="1.25" />
-                      <rect x="0" y="9.5" width="18" height="2.5" rx="1.25" />
-                    </svg>
-                    <span>Drag to move</span>
-                  </div>
-                  <div className="mobile-move-buttons">
-                    <button
-                      type="button"
-                      className="mobile-move-btn"
-                      aria-label={`Move ${event.title} up`}
-                      disabled={saving || index === 0}
-                      onClick={() => moveByOffset(event.id, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className="mobile-move-btn"
-                      aria-label={`Move ${event.title} down`}
-                      disabled={saving || index === displayList.length - 1}
-                      onClick={() => moveByOffset(event.id, 1)}
-                    >
-                      ↓
-                    </button>
-                  </div>
-                </div>
-                )}
               </div>
             );
             })}
@@ -595,24 +505,127 @@ export default function PriorityQueue({
   );
 }
 
+function EventReorderHandle({
+  eventId,
+  title,
+  index,
+  disabled = false,
+  isDragging = false,
+  onDragStart,
+}: {
+  eventId: string;
+  title: string;
+  index: number;
+  disabled?: boolean;
+  isDragging?: boolean;
+  onDragStart: (eventId: string, e: React.PointerEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`event-reorder-handle${isDragging ? ' event-reorder-handle-active' : ''}`}
+      aria-label={`Drag to reorder ${title}, priority ${index + 1}`}
+      disabled={disabled}
+      onPointerDown={(e) => onDragStart(eventId, e)}
+    >
+      <span className="priority-rank">{index + 1}</span>
+      <svg width="16" height="10" viewBox="0 0 16 10" fill="currentColor" aria-hidden="true">
+        <rect x="0" y="0" width="16" height="1.5" rx="0.75" />
+        <rect x="0" y="4.25" width="16" height="1.5" rx="0.75" />
+        <rect x="0" y="8.5" width="16" height="1.5" rx="0.75" />
+      </svg>
+    </button>
+  );
+}
+
 function EventSummary({
   title,
   onActivate,
+  enableLongPressDrag = false,
+  onLongPressDrag,
 }: {
   title: string;
   onActivate: () => void;
+  enableLongPressDrag?: boolean;
+  onLongPressDrag?: () => void;
 }) {
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressTriggeredRef = useRef(false);
+
+  function clearLongPressTimer() {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  function handleActivate() {
+    onActivate();
+  }
+
+  function handlePointerDown(e: React.PointerEvent) {
+    if (!enableLongPressDrag || !onLongPressDrag || e.pointerType === 'mouse') return;
+
+    longPressTriggeredRef.current = false;
+    longPressStartRef.current = { x: e.clientX, y: e.clientY };
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      longPressTriggeredRef.current = true;
+      onLongPressDrag();
+      if (typeof navigator.vibrate === 'function') {
+        navigator.vibrate(12);
+      }
+    }, 420);
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (!enableLongPressDrag || !longPressStartRef.current) return;
+
+    const dx = Math.abs(e.clientX - longPressStartRef.current.x);
+    const dy = Math.abs(e.clientY - longPressStartRef.current.y);
+    if (dx > 8 || dy > 8) {
+      clearLongPressTimer();
+    }
+  }
+
+  function handlePointerUp() {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      clearLongPressTimer();
+      longPressStartRef.current = null;
+      return;
+    }
+
+    clearLongPressTimer();
+    longPressStartRef.current = null;
+
+    if (enableLongPressDrag) {
+      handleActivate();
+    }
+  }
+
+  useEffect(() => () => clearLongPressTimer(), []);
+
   return (
     <div
       className="event-item-summary"
       role="button"
       tabIndex={0}
       aria-expanded="false"
-      onClick={onActivate}
+      onClick={enableLongPressDrag ? undefined : handleActivate}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => {
+        clearLongPressTimer();
+        longPressStartRef.current = null;
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onActivate();
+          handleActivate();
         }
       }}
     >
