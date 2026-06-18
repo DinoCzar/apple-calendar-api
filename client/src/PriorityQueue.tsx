@@ -43,23 +43,6 @@ function getTargetIndexFromY(
   return orderedIds.length - 1;
 }
 
-function useIsMobileLayout(): boolean {
-  const [isMobile, setIsMobile] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia('(max-width: 768px)').matches
-  );
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 768px)');
-    const handler = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  return isMobile;
-}
-
 interface PriorityQueueProps {
   events: SmartEvent[];
   onChange: (events: SmartEvent[]) => void;
@@ -103,7 +86,6 @@ export default function PriorityQueue({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
-  const isMobile = useIsMobileLayout();
 
   const listRef = useRef<HTMLDivElement>(null);
   const reorderableRef = useRef<SmartEvent[]>([]);
@@ -397,10 +379,10 @@ export default function PriorityQueue({
         <div className="priority-section">
           <p className="priority-hint">
             <span className="priority-hint-desktop">
-              Drag the grip to reorder — click the name for details (top slots fill first on sync).
+              Drag the grip on the right to reorder — click the name for details (top slots fill first on sync).
             </span>
             <span className="priority-hint-mobile">
-              Hold and drag the grip, or long-press an event to move it — tap the name for details.
+              Drag the grip on the right to reorder — tap the name for details.
             </span>
             {saving && <span className="priority-saving"> Saving…</span>}
           </p>
@@ -428,16 +410,6 @@ export default function PriorityQueue({
                     isEditing ? ' event-item-content-editing' : ''
                   }${!isExpanded && !isEditing ? ' event-item-content-collapsed' : ''}`}
                 >
-                  {!isEditing && (
-                    <EventReorderHandle
-                      eventId={event.id}
-                      title={event.title}
-                      index={index}
-                      disabled={reorderDisabled}
-                      isDragging={draggedId === event.id}
-                      onDragStart={handleReorderPointerDown}
-                    />
-                  )}
                   {isEditing ? (
                     renderEventEditForm(event)
                   ) : isExpanded ? (
@@ -455,9 +427,17 @@ export default function PriorityQueue({
                   ) : (
                     <EventSummary
                       title={event.title}
-                      enableLongPressDrag={isMobile}
                       onActivate={() => toggleExpand(event.id)}
-                      onLongPressDrag={() => beginPointerDrag(event.id)}
+                    />
+                  )}
+                  {!isEditing && (
+                    <EventReorderHandle
+                      eventId={event.id}
+                      title={event.title}
+                      index={index}
+                      disabled={reorderDisabled}
+                      isDragging={draggedId === event.id}
+                      onDragStart={handleReorderPointerDown}
                     />
                   )}
                 </div>
@@ -541,91 +521,21 @@ function EventReorderHandle({
 function EventSummary({
   title,
   onActivate,
-  enableLongPressDrag = false,
-  onLongPressDrag,
 }: {
   title: string;
   onActivate: () => void;
-  enableLongPressDrag?: boolean;
-  onLongPressDrag?: () => void;
 }) {
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
-  const longPressTriggeredRef = useRef(false);
-
-  function clearLongPressTimer() {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  }
-
-  function handleActivate() {
-    onActivate();
-  }
-
-  function handlePointerDown(e: React.PointerEvent) {
-    if (!enableLongPressDrag || !onLongPressDrag || e.pointerType === 'mouse') return;
-
-    longPressTriggeredRef.current = false;
-    longPressStartRef.current = { x: e.clientX, y: e.clientY };
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTimerRef.current = null;
-      longPressTriggeredRef.current = true;
-      onLongPressDrag();
-      if (typeof navigator.vibrate === 'function') {
-        navigator.vibrate(12);
-      }
-    }, 420);
-  }
-
-  function handlePointerMove(e: React.PointerEvent) {
-    if (!enableLongPressDrag || !longPressStartRef.current) return;
-
-    const dx = Math.abs(e.clientX - longPressStartRef.current.x);
-    const dy = Math.abs(e.clientY - longPressStartRef.current.y);
-    if (dx > 8 || dy > 8) {
-      clearLongPressTimer();
-    }
-  }
-
-  function handlePointerUp() {
-    if (longPressTriggeredRef.current) {
-      longPressTriggeredRef.current = false;
-      clearLongPressTimer();
-      longPressStartRef.current = null;
-      return;
-    }
-
-    clearLongPressTimer();
-    longPressStartRef.current = null;
-
-    if (enableLongPressDrag) {
-      handleActivate();
-    }
-  }
-
-  useEffect(() => () => clearLongPressTimer(), []);
-
   return (
     <div
       className="event-item-summary"
       role="button"
       tabIndex={0}
       aria-expanded="false"
-      onClick={enableLongPressDrag ? undefined : handleActivate}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={() => {
-        clearLongPressTimer();
-        longPressStartRef.current = null;
-      }}
+      onClick={onActivate}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          handleActivate();
+          onActivate();
         }
       }}
     >
