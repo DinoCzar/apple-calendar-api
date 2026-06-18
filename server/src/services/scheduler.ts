@@ -280,7 +280,6 @@ function recurringPatternIsFree(
   repeatDays: number[],
   rangeStart: Date,
   rangeEnd: Date,
-  allBusy: TimeSlot[],
   placedSlots: TimeSlot[],
   settings: AppSettings,
   gapMs: number
@@ -294,7 +293,7 @@ function recurringPatternIsFree(
       const start = applyClockTime(day, anchorStart, timezone);
       const end = new Date(start.getTime() + durationMs);
       const candidate = { start, end };
-      if (!canPlaceWithoutOverlap(candidate, [...allBusy, ...placedSlots], gapMs)) {
+      if (!canPlaceWithoutOverlap(candidate, placedSlots, gapMs)) {
         return false;
       }
     }
@@ -310,7 +309,6 @@ function tryPlaceRecurringEventAtFixedTime(
   rangeStart: Date,
   rangeEnd: Date,
   now: Date,
-  allBusy: TimeSlot[],
   placedSlots: TimeSlot[],
   settings: AppSettings,
   gapMs: number
@@ -341,7 +339,6 @@ function tryPlaceRecurringEventAtFixedTime(
         repeatDays,
         rangeStart,
         rangeEnd,
-        allBusy,
         placedSlots,
         settings,
         gapMs
@@ -359,9 +356,7 @@ function tryPlaceRecurringEvent(
   rangeStart: Date,
   rangeEnd: Date,
   now: Date,
-  allBusy: TimeSlot[],
   placedSlots: TimeSlot[],
-  busyByDay: Map<string, TimeSlot[]>,
   settings: AppSettings,
   gapMs: number
 ): TimeSlot | null {
@@ -374,7 +369,6 @@ function tryPlaceRecurringEvent(
       rangeStart,
       rangeEnd,
       now,
-      allBusy,
       placedSlots,
       settings,
       gapMs
@@ -389,12 +383,10 @@ function tryPlaceRecurringEvent(
       continue;
     }
 
-    const dayKey = formatDateInTimezone(day, settings.timezone);
-    const dayBusy = [...(busyByDay.get(dayKey) || []), ...placedSlots];
     const freeSlots = findFreeSlotsForFullDay(
       day,
       settings.timezone,
-      dayBusy,
+      placedSlots,
       gapMs
     );
     const earliest = getRecurringEarliestOnDay(day, now, settings.timezone);
@@ -419,7 +411,6 @@ function tryPlaceRecurringEvent(
             repeatDays,
             rangeStart,
             rangeEnd,
-            allBusy,
             placedSlots,
             settings,
             gapMs
@@ -495,9 +486,7 @@ export function scheduleSmartEvents(
         rangeStart,
         rangeEnd,
         now,
-        allBusy,
         placedSlots,
-        busyByDay,
         settings,
         gapMs
       );
