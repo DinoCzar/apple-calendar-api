@@ -86,6 +86,19 @@ export default function App() {
 
   return (
     <div className="app">
+      <div className="app-utility-bar">
+        <button
+          className="btn-primary"
+          onClick={handleSyncAll}
+          disabled={syncingAll || !icloudConfigured}
+        >
+          {syncingAll ? 'Syncing all…' : 'Sync All'}
+        </button>
+        <button className="btn-secondary" onClick={handleLogout}>
+          Sign out
+        </button>
+      </div>
+
       <header className="app-top-bar">
         <div className="app-top-bar-start">
           <h1 className="app-title">{activeConfig.label}</h1>
@@ -106,18 +119,6 @@ export default function App() {
               </button>
             ))}
           </nav>
-        </div>
-        <div className="app-top-bar-actions">
-          <button
-            className="btn-primary"
-            onClick={handleSyncAll}
-            disabled={syncingAll || !icloudConfigured}
-          >
-            {syncingAll ? 'Syncing all…' : 'Sync All'}
-          </button>
-          <button className="btn-secondary" onClick={handleLogout}>
-            Sign out
-          </button>
         </div>
       </header>
 
