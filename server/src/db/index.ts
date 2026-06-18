@@ -325,9 +325,11 @@ type SmartEventUpdate = Partial<
     | 'grocery_sides'
     | 'grocery_recipe'
     | 'grocery_ingredients'
+    | 'repeat_time_of_day'
   >
 > & {
   apple_event_uid?: string | null;
+  repeat_days_of_week?: number[] | null;
 };
 
 export async function updateSmartEvent(
@@ -344,6 +346,16 @@ export async function updateSmartEvent(
 
   for (const [key, value] of Object.entries(updates)) {
     if (value !== undefined) {
+      if (key === 'repeat_days_of_week') {
+        fields.push(`${key} = ?`);
+        values.push(
+          Array.isArray(value) && value.length
+            ? formatScheduleDaysOfWeek(value)
+            : null
+        );
+        continue;
+      }
+
       fields.push(`${key} = ?`);
       values.push(value as string | number | null);
     }

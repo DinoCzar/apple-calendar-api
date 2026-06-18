@@ -114,6 +114,13 @@ function stripGroceryUpdateFields(
   return rest;
 }
 
+function stripRecurringUpdateFields(
+  input: UpdateSmartEventInput
+): UpdateSmartEventInput {
+  const { repeat_days_of_week, repeat_time_of_day, ...rest } = input;
+  return rest;
+}
+
 function normalizeSmartEventUpdate(
   workspace: WorkspaceId,
   input: UpdateSmartEventInput
@@ -127,21 +134,24 @@ function normalizeSmartEventUpdate(
     normalized.description = normalizeOptionalText(input.description);
   }
 
-  if (workspace !== 'grocery') {
+  if (workspace === 'grocery') {
+    if ('grocery_sides' in input) {
+      normalized.grocery_sides = normalizeOptionalText(input.grocery_sides);
+    }
+    if ('grocery_recipe' in input) {
+      normalized.grocery_recipe = normalizeOptionalText(input.grocery_recipe);
+    }
+    if ('grocery_ingredients' in input) {
+      normalized.grocery_ingredients = normalizeOptionalText(input.grocery_ingredients);
+    }
+    return stripRecurringUpdateFields(normalized);
+  }
+
+  if (workspace === 'recurring') {
     return stripGroceryUpdateFields(normalized);
   }
 
-  if ('grocery_sides' in input) {
-    normalized.grocery_sides = normalizeOptionalText(input.grocery_sides);
-  }
-  if ('grocery_recipe' in input) {
-    normalized.grocery_recipe = normalizeOptionalText(input.grocery_recipe);
-  }
-  if ('grocery_ingredients' in input) {
-    normalized.grocery_ingredients = normalizeOptionalText(input.grocery_ingredients);
-  }
-
-  return normalized;
+  return stripRecurringUpdateFields(stripGroceryUpdateFields(normalized));
 }
 
 router.post('/', async (req, res) => {
@@ -190,6 +200,20 @@ router.patch('/:id', async (req, res) => {
     if (input.title !== undefined && !input.title.trim()) {
       res.status(400).json({ error: 'Title is required' });
       return;
+    }
+    if (workspace === 'recurring' && input.repeat_days_of_week !== undefined) {
+      const repeatError = validateRepeatDays(workspace, input.repeat_days_of_week);
+      if (repeatError) {
+        res.status(400).json({ error: repeatError });
+        return;
+      }
+    }
+    if (workspace === 'recurring' && input.repeat_time_of_day !== undefined) {
+      const timeError = validateRepeatTime(workspace, input.repeat_time_of_day);
+      if (timeError) {
+        res.status(400).json({ error: timeError });
+        return;
+      }
     }
     const event = await updateSmartEvent(req.params.id, workspace, input);
     if (!event) {
