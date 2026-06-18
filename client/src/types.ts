@@ -89,6 +89,21 @@ export interface SyncAllResult {
   workspaces: SyncAllWorkspaceResult[];
 }
 
+export type SyncAllProgressStatus =
+  | 'pending'
+  | 'syncing'
+  | 'synced'
+  | 'skipped'
+  | 'error';
+
+export interface SyncAllProgressItem {
+  workspace: WorkspaceId;
+  status: SyncAllProgressStatus;
+  syncedCount?: number;
+  error?: string;
+  result?: SyncResult;
+}
+
 export interface RecallResult {
   calendarEventsRemoved: number;
   smartEventsRecalled: number;
