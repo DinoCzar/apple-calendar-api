@@ -32,9 +32,15 @@ function todayDateInputValue(): string {
 
 interface EventWorkspaceProps {
   workspace: WorkspaceId;
+  refreshToken?: number;
+  globalSyncing?: boolean;
 }
 
-export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
+export default function EventWorkspace({
+  workspace,
+  refreshToken = 0,
+  globalSyncing = false,
+}: EventWorkspaceProps) {
   const config = getWorkspaceConfig(workspace);
   const workspaceApi = useMemo(
     () => createWorkspaceApi(workspace),
@@ -89,6 +95,15 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (refreshToken > 0) {
+      load();
+      if (workspace !== 'recurring') {
+        setBusyPreviewRefresh((n) => n + 1);
+      }
+    }
+  }, [refreshToken, load, workspace]);
 
   useEffect(() => {
     if (settings?.icloud_configured) {
@@ -359,6 +374,7 @@ export default function EventWorkspace({ workspace }: EventWorkspaceProps) {
             onClick={handleSync}
             disabled={
               syncing ||
+              globalSyncing ||
               !settings?.icloud_configured ||
               syncableCount === 0
             }

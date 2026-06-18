@@ -3,9 +3,10 @@ import type {
   AppleEventPreview,
   PersistedAppSettings,
   SmartEvent,
+  SyncAllResult,
   SyncResult,
 } from './types';
-import type { WorkspaceId } from './workspaces';
+import { WORKSPACE_IDS, type WorkspaceId } from './workspaces';
 
 const API = '/api';
 
@@ -108,6 +109,29 @@ export function createWorkspaceApi(workspace: WorkspaceId) {
       );
     },
   };
+}
+
+export async function runSyncAllWorkspaces(): Promise<SyncAllResult> {
+  const workspaces: SyncAllResult['workspaces'] = [];
+
+  for (const workspace of WORKSPACE_IDS) {
+    const workspaceApi = createWorkspaceApi(workspace);
+    const settings = await workspaceApi.getSettings();
+    if (!settings.icloud_configured) {
+      throw new Error(
+        'iCloud not configured. Set ICLOUD_USERNAME and ICLOUD_APP_PASSWORD.'
+      );
+    }
+
+    const events = await workspaceApi.getSmartEvents();
+    const syncableCount = events.filter((event) => event.status !== 'completed').length;
+    if (syncableCount === 0) continue;
+
+    const result = await workspaceApi.runSync(true);
+    workspaces.push({ workspace, result });
+  }
+
+  return { workspaces };
 }
 
 export const api = {
