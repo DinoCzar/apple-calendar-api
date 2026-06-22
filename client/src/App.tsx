@@ -1,9 +1,21 @@
 import { useEffect, useState } from 'react';
-import { api, AuthError, createWorkspaceApi, runSyncAllWorkspaces } from './api';
+import {
+  api,
+  AuthError,
+  createWorkspaceApi,
+  loadSchedulableScheduleDaysAhead,
+  runSyncAllWorkspaces,
+  updateSchedulableScheduleDaysAhead,
+} from './api';
 import EventWorkspace from './EventWorkspace';
 import Login from './Login';
 import type { SyncAllProgressItem } from './types';
-import { getWorkspaceConfig, WORKSPACES, type WorkspaceId } from './workspaces';
+import {
+  getWorkspaceConfig,
+  SCHEDULE_DAYS_AHEAD_OPTIONS,
+  WORKSPACES,
+  type WorkspaceId,
+} from './workspaces';
 
 function syncAllProgressLabel(item: SyncAllProgressItem): string {
   const label = getWorkspaceConfig(item.workspace).label;
@@ -50,6 +62,9 @@ export default function App() {
     null
   );
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
+  const [scheduleDaysAhead, setScheduleDaysAhead] = useState(30);
+  const [loadingScheduleDays, setLoadingScheduleDays] = useState(false);
+  const [savingScheduleDays, setSavingScheduleDays] = useState(false);
 
   useEffect(() => {
     api
@@ -75,6 +90,16 @@ export default function App() {
       .catch(() => setIcloudConfigured(false));
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    setLoadingScheduleDays(true);
+    loadSchedulableScheduleDaysAhead()
+      .then(setScheduleDaysAhead)
+      .catch(() => setScheduleDaysAhead(30))
+      .finally(() => setLoadingScheduleDays(false));
+  }, [user, workspaceRefreshToken]);
+
   async function handleLogout() {
     await api.logout();
     setUser(null);
@@ -97,6 +122,22 @@ export default function App() {
       setSyncAllProgress(null);
     } finally {
       setSyncingAll(false);
+    }
+  }
+
+  async function handleScheduleDaysChange(days: number) {
+    if (days === scheduleDaysAhead || savingScheduleDays) return;
+
+    setSavingScheduleDays(true);
+    setError(null);
+    try {
+      await updateSchedulableScheduleDaysAhead(days);
+      setScheduleDaysAhead(days);
+      setWorkspaceRefreshToken((token) => token + 1);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingScheduleDays(false);
     }
   }
 
@@ -124,13 +165,38 @@ export default function App() {
   return (
     <div className="app">
       <div className="app-utility-bar">
-        <button
-          className="btn-primary"
-          onClick={handleSyncAll}
-          disabled={syncingAll || !icloudConfigured}
-        >
-          {syncingAll ? 'Syncing all…' : 'Sync All'}
-        </button>
+        <div className="app-utility-bar-start">
+          <button
+            className="btn-primary"
+            onClick={handleSyncAll}
+            disabled={syncingAll || !icloudConfigured}
+          >
+            {syncingAll ? 'Syncing all…' : 'Sync All'}
+          </button>
+          <div
+            className="schedule-days-control"
+            role="group"
+            aria-label="Schedule events ahead in days"
+          >
+            <span className="schedule-days-label">Schedule ahead</span>
+            <div className="schedule-days-options">
+              {SCHEDULE_DAYS_AHEAD_OPTIONS.map((days) => (
+                <button
+                  key={days}
+                  type="button"
+                  className={`weekday-toggle${
+                    scheduleDaysAhead === days ? ' active' : ''
+                  }`}
+                  aria-pressed={scheduleDaysAhead === days}
+                  disabled={loadingScheduleDays || savingScheduleDays || syncingAll}
+                  onClick={() => handleScheduleDaysChange(days)}
+                >
+                  {days} days
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
         <button className="btn-secondary" onClick={handleLogout}>
           Sign out
         </button>

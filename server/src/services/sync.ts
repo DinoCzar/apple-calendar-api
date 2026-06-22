@@ -21,7 +21,7 @@ import { formatGroceryCalendarNotes } from './grocery-traits';
 import type { AppSettings, RecallResult, SmartEvent, SyncResult } from '../types';
 import { WORKSPACE_IDS, type WorkspaceId } from '../workspace';
 
-const MAX_SCHEDULE_DAYS = 30;
+const MAX_SCHEDULE_DAYS = 90;
 
 function effectiveScheduleDays(
   settings: AppSettings,
