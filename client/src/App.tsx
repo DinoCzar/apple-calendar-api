@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   api,
   AuthError,
@@ -8,6 +8,7 @@ import {
   updateSchedulableScheduleDaysAhead,
 } from './api';
 import EventWorkspace from './EventWorkspace';
+import LoadingDots from './LoadingDots';
 import Login from './Login';
 import SyncProgressBar from './SyncProgressBar';
 import { getSyncAllProgressPercent } from './sync-progress';
@@ -19,14 +20,14 @@ import {
   type WorkspaceId,
 } from './workspaces';
 
-function syncAllProgressLabel(item: SyncAllProgressItem): string {
+function renderSyncAllProgressLabel(item: SyncAllProgressItem): ReactNode {
   const label = getWorkspaceConfig(item.workspace).label;
 
   switch (item.status) {
     case 'pending':
       return `${label} — waiting…`;
     case 'syncing':
-      return `${label} — syncing to Apple Calendar…`;
+      return <LoadingDots>{`${label} — syncing to Apple Calendar`}</LoadingDots>;
     case 'synced':
       return `${label} — synced ${item.syncedCount ?? 0} event${
         item.syncedCount === 1 ? '' : 's'
@@ -179,7 +180,7 @@ export default function App() {
             onClick={handleSyncAll}
             disabled={syncingAll || !icloudConfigured}
           >
-            {syncingAll ? 'Syncing all…' : 'Sync All'}
+            {syncingAll ? <LoadingDots>Syncing all</LoadingDots> : 'Sync All'}
           </button>
           <div
             className="schedule-days-control"
@@ -240,14 +241,20 @@ export default function App() {
           className={`alert ${syncAllProgressAlertClass(syncAllProgress, syncingAll)}`}
           aria-live="polite"
         >
-          <strong>{syncingAll ? 'Syncing all workspaces…' : 'Sync all complete'}</strong>
+          <strong>
+            {syncingAll ? (
+              <LoadingDots>Syncing all workspaces</LoadingDots>
+            ) : (
+              'Sync all complete'
+            )}
+          </strong>
           <ul className="sync-all-progress-list">
             {syncAllProgress.map((item) => (
               <li
                 key={item.workspace}
                 className={`sync-all-progress-item sync-all-progress-${item.status}`}
               >
-                {syncAllProgressLabel(item)}
+                {renderSyncAllProgressLabel(item)}
               </li>
             ))}
           </ul>

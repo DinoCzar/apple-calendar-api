@@ -7,6 +7,7 @@ import {
   type GroceryListDays,
 } from './grocery';
 import PriorityQueue from './PriorityQueue';
+import LoadingDots from './LoadingDots';
 import type { AppSettings, SmartEvent, SyncResult } from './types';
 import { toPersistedSettings } from './types';
 import { getWorkspaceConfig, type WorkspaceId } from './workspaces';
@@ -389,7 +390,7 @@ export default function EventWorkspace({
               syncableCount === 0
             }
           >
-            {syncing ? 'Syncing…' : config.syncButtonLabel}
+            {syncing ? <LoadingDots>Syncing</LoadingDots> : config.syncButtonLabel}
           </button>
         </div>
       </header>
