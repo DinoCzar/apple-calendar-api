@@ -9,6 +9,8 @@ import {
 } from './api';
 import EventWorkspace from './EventWorkspace';
 import Login from './Login';
+import SyncProgressBar from './SyncProgressBar';
+import { getSyncAllProgressPercent } from './sync-progress';
 import type { SyncAllProgressItem } from './types';
 import {
   getWorkspaceConfig,
@@ -65,6 +67,7 @@ export default function App() {
   const [scheduleDaysAhead, setScheduleDaysAhead] = useState(30);
   const [loadingScheduleDays, setLoadingScheduleDays] = useState(false);
   const [savingScheduleDays, setSavingScheduleDays] = useState(false);
+  const [workspaceSyncing, setWorkspaceSyncing] = useState(false);
 
   useEffect(() => {
     api
@@ -161,9 +164,14 @@ export default function App() {
         message,
       }))
     ) ?? [];
+  const syncBarActive = syncingAll || workspaceSyncing;
+  const syncBarProgress =
+    syncingAll && syncAllProgress ? getSyncAllProgressPercent(syncAllProgress) : null;
 
   return (
-    <div className="app">
+    <>
+      <SyncProgressBar active={syncBarActive} progress={syncBarProgress} />
+      <div className="app">
       <div className="app-utility-bar">
         <div className="app-utility-bar-start">
           <button
@@ -260,7 +268,9 @@ export default function App() {
         workspace={activeWorkspace}
         refreshToken={workspaceRefreshToken}
         globalSyncing={syncingAll}
+        onSyncingChange={setWorkspaceSyncing}
       />
     </div>
+    </>
   );
 }

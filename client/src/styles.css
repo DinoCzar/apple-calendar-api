@@ -667,6 +667,42 @@ label {
   color: #b8cff9;
 }
 
+.sync-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 1000;
+  background: rgba(91, 141, 239, 0.12);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sync-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #7aa3f5);
+  box-shadow: 0 0 8px rgba(91, 141, 239, 0.6);
+}
+
+.sync-progress-bar-fill-determinate {
+  transition: width 0.35s ease;
+}
+
+.sync-progress-bar-fill-indeterminate {
+  width: 35%;
+  animation: sync-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes sync-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
 .sync-all-progress-list {
   list-style: none;
   margin: 0.75rem 0 0;

@@ -34,12 +34,14 @@ interface EventWorkspaceProps {
   workspace: WorkspaceId;
   refreshToken?: number;
   globalSyncing?: boolean;
+  onSyncingChange?: (syncing: boolean) => void;
 }
 
 export default function EventWorkspace({
   workspace,
   refreshToken = 0,
   globalSyncing = false,
+  onSyncingChange,
 }: EventWorkspaceProps) {
   const config = getWorkspaceConfig(workspace);
   const workspaceApi = useMemo(
@@ -95,6 +97,14 @@ export default function EventWorkspace({
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    onSyncingChange?.(syncing);
+  }, [syncing, onSyncingChange]);
+
+  useEffect(() => {
+    return () => onSyncingChange?.(false);
+  }, [onSyncingChange]);
 
   useEffect(() => {
     if (refreshToken > 0) {
