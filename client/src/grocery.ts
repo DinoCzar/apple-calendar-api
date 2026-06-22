@@ -14,16 +14,6 @@ function addLocalDays(date: Date, days: number): Date {
   return next;
 }
 
-function formatEventDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
 export function getScheduledGroceryEventsInDays(
   events: SmartEvent[],
   days: GroceryListDays,
@@ -52,19 +42,13 @@ export function formatGroceryListText(
   now = new Date()
 ): string {
   const scheduled = getScheduledGroceryEventsInDays(events, days, now);
-  const generatedOn = now.toLocaleString(undefined, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
 
   if (scheduled.length === 0) {
-    return `Grocery list — next ${days} days\nGenerated ${generatedOn}\n\nNo grocery events are scheduled in this window.`;
+    return `Grocery list — next ${days} days\n\nNo grocery events are scheduled in this window.`;
   }
 
   const sections = scheduled.map((event) => {
-    const lines = [formatEventDateTime(event.scheduled_start!) + ' — ' + event.title];
+    const lines = [event.title];
 
     if (event.grocery_ingredients?.trim()) {
       lines.push('Ingredients:');
@@ -83,12 +67,7 @@ export function formatGroceryListText(
     return lines.join('\n');
   });
 
-  return [
-    `Grocery list — next ${days} days`,
-    `Generated ${generatedOn}`,
-    '',
-    ...sections,
-  ].join('\n\n');
+  return [`Grocery list — next ${days} days`, '', ...sections].join('\n\n');
 }
 
 export interface GroceryTrait {
