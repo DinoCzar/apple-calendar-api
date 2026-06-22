@@ -7,7 +7,7 @@ import type {
   SyncAllResult,
   SyncResult,
 } from './types';
-import { WORKSPACE_IDS, type WorkspaceId } from './workspaces';
+import { SCHEDULABLE_WORKSPACE_IDS, WORKSPACE_IDS, type WorkspaceId } from './workspaces';
 
 const API = '/api';
 
@@ -168,6 +168,26 @@ export async function runSyncAllWorkspaces(
   }
 
   return { workspaces };
+}
+
+export async function loadSchedulableScheduleDaysAhead(): Promise<number> {
+  const settings = await Promise.all(
+    SCHEDULABLE_WORKSPACE_IDS.map((workspace) =>
+      createWorkspaceApi(workspace).getSettings()
+    )
+  );
+  const days = settings.map((item) => item.schedule_days_ahead);
+  return days[0] ?? 30;
+}
+
+export async function updateSchedulableScheduleDaysAhead(
+  days: number
+): Promise<void> {
+  await Promise.all(
+    SCHEDULABLE_WORKSPACE_IDS.map((workspace) =>
+      createWorkspaceApi(workspace).updateSettings({ schedule_days_ahead: days })
+    )
+  );
 }
 
 export const api = {

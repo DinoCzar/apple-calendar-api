@@ -96,3 +96,10 @@ export const WORKSPACES: WorkspaceConfig[] = [
 export function getWorkspaceConfig(id: WorkspaceId): WorkspaceConfig {
   return WORKSPACES.find((w) => w.id === id) ?? WORKSPACES[0];
 }
+
+export const SCHEDULABLE_WORKSPACE_IDS = WORKSPACE_IDS.filter(
+  (id): id is Exclude<WorkspaceId, 'recurring'> => id !== 'recurring'
+);
+
+export const SCHEDULE_DAYS_AHEAD_OPTIONS = [30, 60, 90] as const;
+export type ScheduleDaysAhead = (typeof SCHEDULE_DAYS_AHEAD_OPTIONS)[number];

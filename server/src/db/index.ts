@@ -21,7 +21,7 @@ const DEFAULT_SETTINGS: Omit<AppSettings, 'smart_calendar_name'> & {
   apple_calendar_name: '',
   working_hours_start: '09:00',
   working_hours_end: '17:00',
-  schedule_days_ahead: 7,
+  schedule_days_ahead: 30,
   min_gap_minutes: 15,
   timezone: 'America/Los_Angeles',
   schedule_start_use_default: true,

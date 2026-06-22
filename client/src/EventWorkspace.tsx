@@ -768,8 +768,8 @@ export default function EventWorkspace({
                       <input
                         type="number"
                         min={1}
-                        max={30}
-                        value={settingsDraft.schedule_days_ahead ?? 7}
+                        max={90}
+                        value={settingsDraft.schedule_days_ahead ?? 30}
                         onChange={(e) =>
                           setSettingsDraft((s) => ({
                             ...s,
