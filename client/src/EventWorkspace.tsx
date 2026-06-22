@@ -762,37 +762,20 @@ export default function EventWorkspace({
                       Events are only placed on selected days within your work hours.
                     </p>
                   </div>
-                  <div className="form-row" style={{ marginTop: '0.75rem' }}>
-                    <div>
-                      <label>Schedule ahead (days)</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={90}
-                        value={settingsDraft.schedule_days_ahead ?? 30}
-                        onChange={(e) =>
-                          setSettingsDraft((s) => ({
-                            ...s,
-                            schedule_days_ahead: Number(e.target.value),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label>Gap between events (min)</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={5}
-                        value={settingsDraft.min_gap_minutes ?? 15}
-                        onChange={(e) =>
-                          setSettingsDraft((s) => ({
-                            ...s,
-                            min_gap_minutes: Number(e.target.value),
-                          }))
-                        }
-                      />
-                    </div>
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <label>Gap between events (min)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={settingsDraft.min_gap_minutes ?? 15}
+                      onChange={(e) =>
+                        setSettingsDraft((s) => ({
+                          ...s,
+                          min_gap_minutes: Number(e.target.value),
+                        }))
+                      }
+                    />
                   </div>
                 </>
               )}
