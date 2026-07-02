@@ -163,6 +163,7 @@ function workspaceDefaults(workspace: WorkspaceId): AppSettings {
   return {
     ...DEFAULT_SETTINGS,
     smart_calendar_name: defaultCalendarName(workspace),
+    min_gap_minutes: workspace === 'other' ? 0 : DEFAULT_SETTINGS.min_gap_minutes,
   };
 }
 
@@ -200,6 +201,14 @@ async function seedDefaultSettings(): Promise<void> {
   }
 }
 
+async function migrateOtherWorkspaceZeroGap(db: Client): Promise<void> {
+  await db.execute({
+    sql: `INSERT INTO settings (key, value) VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    args: [settingsStorageKey('other', 'min_gap_minutes'), '0'],
+  });
+}
+
 export async function initDb(): Promise<void> {
   const db = getClient();
 
@@ -230,6 +239,7 @@ export async function initDb(): Promise<void> {
 
   await migrateLegacySettings(db);
   await seedDefaultSettings();
+  await migrateOtherWorkspaceZeroGap(db);
 }
 
 export async function listSmartEvents(
@@ -492,9 +502,12 @@ export async function getSettings(
     schedule_days_ahead: settings.schedule_days_ahead
       ? parseInt(settings.schedule_days_ahead, 10)
       : defaults.schedule_days_ahead,
-    min_gap_minutes: settings.min_gap_minutes
-      ? parseInt(settings.min_gap_minutes, 10)
-      : defaults.min_gap_minutes,
+    min_gap_minutes:
+      workspace === 'other'
+        ? 0
+        : settings.min_gap_minutes !== undefined && settings.min_gap_minutes !== ''
+          ? parseInt(settings.min_gap_minutes, 10)
+          : defaults.min_gap_minutes,
     timezone: settings.timezone ?? defaults.timezone,
     smart_calendar_name:
       settings.smart_calendar_name ?? defaults.smart_calendar_name,
