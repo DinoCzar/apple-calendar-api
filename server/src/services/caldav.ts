@@ -724,14 +724,35 @@ function formatIcsDate(date: Date): string {
   );
 }
 
+function formatIcsLocalDate(date: Date, timezone: string): string {
+  const parts = partsInTimezone(date, timezone);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${parts.year}${pad(parts.month)}${pad(parts.day)}` +
+    `T${pad(parts.hour)}${pad(parts.minute)}${pad(parts.second)}`
+  );
+}
+
 function buildIcsEvent(params: {
   uid: string;
   title: string;
   description?: string;
   start: Date;
   end: Date;
+  timezone: string;
   repeatDaysOfWeek?: number[];
 }): string {
+  const isRecurring = Boolean(params.repeatDaysOfWeek?.length);
+  // Recurring events must use local TZID times so RRULE BYDAY matches the
+  // intended weekday. UTC DTSTART + BYDAY shifts evening events (e.g. Wed
+  // 5:30pm PDT -> Thu 00:30Z) onto the previous local weekday.
+  const startLine = isRecurring
+    ? `DTSTART;TZID=${params.timezone}:${formatIcsLocalDate(params.start, params.timezone)}`
+    : `DTSTART:${formatIcsDate(params.start)}`;
+  const endLine = isRecurring
+    ? `DTEND;TZID=${params.timezone}:${formatIcsLocalDate(params.end, params.timezone)}`
+    : `DTEND:${formatIcsDate(params.end)}`;
+
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -739,8 +760,8 @@ function buildIcsEvent(params: {
     'BEGIN:VEVENT',
     `UID:${params.uid}`,
     `DTSTAMP:${formatIcsDate(new Date())}`,
-    `DTSTART:${formatIcsDate(params.start)}`,
-    `DTEND:${formatIcsDate(params.end)}`,
+    startLine,
+    endLine,
     `SUMMARY:${params.title}`,
   ];
 
@@ -941,6 +962,7 @@ export async function pushSmartEventToCalendar(params: {
     description: params.description ?? undefined,
     start: params.start,
     end: params.end,
+    timezone: params.settings.timezone,
     repeatDaysOfWeek: params.repeatDaysOfWeek ?? undefined,
   });
 
