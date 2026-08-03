@@ -206,15 +206,19 @@ function partsInTimezone(date: Date, timezone: string) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    // hour12: false can report midnight as hour 24 on some Node/ICU builds,
+    // which shifts makeDateInTimezone(..., 0, 0) one calendar day earlier.
+    hourCycle: 'h23',
   }).formatToParts(date);
 
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0';
+  let hour = Number(get('hour'));
+  if (hour === 24) hour = 0;
   return {
     year: Number(get('year')),
     month: Number(get('month')),
     day: Number(get('day')),
-    hour: Number(get('hour')),
+    hour,
     minute: Number(get('minute')),
     second: Number(get('second')),
   };
